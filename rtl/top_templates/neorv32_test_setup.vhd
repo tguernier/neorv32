@@ -47,13 +47,13 @@ use neorv32.neorv32_package.all;
 entity neorv32_test_setup is
   port (
     -- Global control --
-    clk_i       : in  std_ulogic := '0'; -- global clock, rising edge
-    rstn_i      : in  std_ulogic := '0'; -- global reset, low-active, async
+    CLOCK_50    : in  std_ulogic := '0'; -- global clock, rising edge
+    KEY         : in  std_ulogic_vector(3 downto 0); -- global reset, low-active, async
     -- GPIO --
-    gpio_o      : out std_ulogic_vector(7 downto 0); -- parallel output
+    LEDR        : out std_ulogic_vector(9 downto 0); -- parallel output
     -- UART0 --
-    uart0_txd_o : out std_ulogic; -- UART0 send data
-    uart0_rxd_i : in  std_ulogic := '0' -- UART0 receive data
+    -- HPS_UART_TX : out std_ulogic; -- UART0 send data
+    -- HPS_UART_RX : in  std_ulogic := '0' -- UART0 receive data
   );
 end neorv32_test_setup;
 
@@ -69,7 +69,7 @@ begin
   neorv32_top_inst: neorv32_top
   generic map (
     -- General --
-    CLOCK_FREQUENCY              => 100000000,   -- clock frequency of clk_i in Hz
+    CLOCK_FREQUENCY              => 50000000,   -- clock frequency of clk_i in Hz
     BOOTLOADER_EN                => true,        -- implement processor-internal bootloader?
     USER_CODE                    => x"00000000", -- custom user code
     HW_THREAD_ID                 => 0,           -- hardware thread id (hartid)
@@ -127,8 +127,8 @@ begin
   )
   port map (
     -- Global control --
-    clk_i       => clk_i,           -- global clock, rising edge
-    rstn_i      => rstn_i,          -- global reset, low-active, async
+    clk_i       => CLOCK_50,        -- global clock, rising edge
+    rstn_i      => KEY(0),           -- global reset, low-active, async
     -- Wishbone bus interface (available if MEM_EXT_EN = true) --
     wb_tag_o    => open,            -- tag
     wb_adr_o    => open,            -- address
@@ -148,8 +148,8 @@ begin
     gpio_o      => gpio_out,        -- parallel output
     gpio_i      => (others => '0'), -- parallel input
     -- primary UART0 (available if IO_UART0_EN = true) --
-    uart0_txd_o => uart0_txd_o,     -- UART0 send data
-    uart0_rxd_i => uart0_rxd_i,     -- UART0 receive data
+    uart0_txd_o => HPS_UART_TX,     -- UART0 send data
+    uart0_rxd_i => HPS_UART_RX,     -- UART0 receive data
     uart0_rts_o => open,            -- hw flow control: UART0.RX ready to receive ("RTR"), low-active, optional
     uart0_cts_i => '0',             -- hw flow control: UART0.TX allowed to transmit, low-active, optional
     -- secondary UART1 (available if IO_UART1_EN = true) --
@@ -184,7 +184,7 @@ begin
   );
 
   -- output --
-  gpio_o <= gpio_out(7 downto 0);
+  LEDR <= gpio_out(9 downto 0);
 
 
 end neorv32_test_setup_rtl;
