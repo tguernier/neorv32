@@ -100,7 +100,7 @@ enum NEORV32_CSR_enum {
   CSR_MEPC           = 0x341, /**< 0x341 - mepc     (r/w): Machine exception program counter */
   CSR_MCAUSE         = 0x342, /**< 0x342 - mcause   (r/w): Machine trap cause */
   CSR_MTVAL          = 0x343, /**< 0x343 - mtval    (r/w): Machine bad address or instruction */
-  CSR_MIP            = 0x344, /**< 0x344 - mip      (r/w): Machine interrupt pending register */
+  CSR_MIP            = 0x344, /**< 0x344 - mip      (r/-): Machine interrupt pending register */
 
   CSR_PMPCFG0        = 0x3a0, /**< 0x3a0 - pmpcfg0  (r/w): Physical memory protection configuration register 0  */
   CSR_PMPCFG1        = 0x3a1, /**< 0x3a1 - pmpcfg1  (r/w): Physical memory protection configuration register 1  */
@@ -511,7 +511,9 @@ enum NEORV32_CSR_MZEXT_enum {
   CSR_MZEXT_ZBA      = 4, /**< CPU mzext CSR (4): Zba extension (B sub-extension) available when set (r/-) */
   CSR_MZEXT_ZFINX    = 5, /**< CPU mzext CSR (5): Zfinx extension (F sub-/alternative-extension) available when set (r/-) */
   CSR_MZEXT_ZXSCNT   = 6, /**< CPU mzext CSR (6): Custom extension - Small CPU counters: "cycle" & "instret" CSRs have less than 64-bit when set (r/-) */
-  CSR_MZEXT_ZXNOCNT  = 7  /**< CPU mzext CSR (7): Custom extension - NO CPU counters: "cycle" & "instret" CSRs are NOT available at all when set (r/-) */
+  CSR_MZEXT_ZXNOCNT  = 7, /**< CPU mzext CSR (7): Custom extension - NO CPU counters: "cycle" & "instret" CSRs are NOT available at all when set (r/-) */
+  CSR_MZEXT_PMP      = 8, /**< CPU mzext CSR (8): PMP (physical memory protection) extension available when set (r/-) */
+  CSR_MZEXT_HPM      = 9  /**< CPU mzext CSR (9): HPM (hardware performance monitors) extension available when set (r/-) */
 };
 
 
@@ -553,6 +555,7 @@ enum NEORV32_EXCEPTION_CODES_enum {
   TRAP_CODE_S_ACCESS     = 0x00000007, /**< 0.7:  Store (bus) access fault */
   TRAP_CODE_UENV_CALL    = 0x00000008, /**< 0.8:  Environment call from user mode (ECALL instruction) */
   TRAP_CODE_MENV_CALL    = 0x0000000b, /**< 0.11: Environment call from machine mode (ECALL instruction) */
+  TRAP_CODE_NMI          = 0x80000000, /**< 1.0:  Non-maskable interrupt */
   TRAP_CODE_MSI          = 0x80000003, /**< 1.3:  Machine software interrupt */
   TRAP_CODE_MTI          = 0x80000007, /**< 1.7:  Machine timer interrupt */
   TRAP_CODE_MEI          = 0x8000000b, /**< 1.11: Machine external interrupt */
@@ -1079,6 +1082,8 @@ enum NEORV32_NEOLED_CT_enum {
   SYSINFO_FEATURES_MEM_INT_DMEM     =  4, /**< SYSINFO_FEATURES  (4) (r/-): Processor-internal data memory implemented when 1 (via MEM_INT_DMEM_EN generic) */
   SYSINFO_FEATURES_MEM_EXT_ENDIAN   =  5, /**< SYSINFO_FEATURES  (5) (r/-): External bus interface uses BIG-endian byte-order when 1 (via package.xbus_big_endian_c constant) */
   SYSINFO_FEATURES_ICACHE           =  6, /**< SYSINFO_FEATURES  (6) (r/-): Processor-internal instruction cache implemented when 1 (via ICACHE_EN generic) */
+
+  SYSINFO_FEATURES_HW_RESET         = 15, /**< SYSINFO_FEATURES (15) (r/-): Dedicated hardware reset of core registers implemented when 1 (via package's dedicated_reset_c constant) */
 
   SYSINFO_FEATURES_IO_GPIO          = 16, /**< SYSINFO_FEATURES (16) (r/-): General purpose input/output port unit implemented when 1 (via IO_GPIO_EN generic) */
   SYSINFO_FEATURES_IO_MTIME         = 17, /**< SYSINFO_FEATURES (17) (r/-): Machine system timer implemented when 1 (via IO_MTIME_EN generic) */

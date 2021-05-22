@@ -167,6 +167,7 @@ entity neorv32_top_axi4lite is
     -- NeoPixel-compatible smart LED interface (available if IO_NEOLED_EN = true) --
     neoled_o    : out std_logic; -- async serial data line
     -- Interrupts --
+    nm_irq_i    : in  std_logic := '0'; -- non-maskable interrupt
     soc_firq_i  : in  std_logic_vector(5 downto 0) := (others => '0'); -- fast interrupt channels
     msw_irq_i   : in  std_logic := '0'; -- machine software interrupt
     mext_irq_i  : in  std_logic := '0'  -- machine external interrupt
@@ -209,22 +210,24 @@ architecture neorv32_top_axi4lite_rtl of neorv32_top_axi4lite is
   --
   signal neoled_o_int    : std_ulogic;
   --
+  signal nm_irq_i_int    : std_ulogic;
   signal soc_firq_i_int  : std_ulogic_vector(05 downto 0);
   signal msw_irq_i_int   : std_ulogic;
   signal mext_irq_i_int  : std_ulogic;
 
   -- internal wishbone bus --
   type wb_bus_t is record
-    adr : std_ulogic_vector(31 downto 0); -- address
-    di  : std_ulogic_vector(31 downto 0); -- processor input data
-    do  : std_ulogic_vector(31 downto 0); -- processor output data
-    we  : std_ulogic; -- write enable
-    sel : std_ulogic_vector(03 downto 0); -- byte enable
-    stb : std_ulogic; -- strobe
-    cyc : std_ulogic; -- valid cycle
-    ack : std_ulogic; -- transfer acknowledge
-    err : std_ulogic; -- transfer error
-    tag : std_ulogic_vector(03 downto 0); -- tag
+    adr  : std_ulogic_vector(31 downto 0); -- address
+    di   : std_ulogic_vector(31 downto 0); -- processor input data
+    do   : std_ulogic_vector(31 downto 0); -- processor output data
+    we   : std_ulogic; -- write enable
+    sel  : std_ulogic_vector(03 downto 0); -- byte enable
+    stb  : std_ulogic; -- strobe
+    cyc  : std_ulogic; -- valid cycle
+    ack  : std_ulogic; -- transfer acknowledge
+    err  : std_ulogic; -- transfer error
+    tag  : std_ulogic_vector(02 downto 0); -- tag
+    lock : std_ulogic; -- exclusive access request
   end record;
   signal wb_core : wb_bus_t;
 
@@ -244,7 +247,7 @@ begin
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   assert not (wb_pipe_mode_c = true) report "NEORV32 PROCESSOR CONFIG ERROR: AXI4-Lite bridge requires STANDARD/CLASSIC Wishbone mode (package.wb_pipe_mode_c = false)." severity error;
-  assert not (CPU_EXTENSION_RISCV_A = true) report "NEORV32 PROCESSOR CONFIG WARNING: AXI4-Lite provides NO support for atomic memory operations." severity warning;
+  assert not (CPU_EXTENSION_RISCV_A = true) report "NEORV32 PROCESSOR CONFIG WARNING: AXI4-Lite provides NO support for atomic memory operations. LR/SC access via AXI will raise a bus exception." severity warning;
 
 
   -- The Core Of The Problem ----------------------------------------------------------------
@@ -291,6 +294,7 @@ begin
     ICACHE_ASSOCIATIVITY         => ICACHE_ASSOCIATIVITY, -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
     MEM_EXT_EN                   => true,               -- implement external memory bus interface?
+    MEM_EXT_TIMEOUT              => 0,                  -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Processor peripherals --
     IO_GPIO_EN                   => IO_GPIO_EN,         -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN                  => IO_MTIME_EN,        -- implement machine system timer (MTIME)?
@@ -321,7 +325,7 @@ begin
     wb_sel_o    => wb_core.sel,     -- byte enable
     wb_stb_o    => wb_core.stb,     -- strobe
     wb_cyc_o    => wb_core.cyc,     -- valid cycle
-    wb_tag_i    => '0',             -- response tag
+    wb_lock_o   => wb_core.lock,    -- exclusive access request
     wb_ack_i    => wb_core.ack,     -- transfer acknowledge
     wb_err_i    => wb_core.err,     -- transfer error
     -- Advanced memory control signals (available if MEM_EXT_EN = true) --
@@ -360,6 +364,7 @@ begin
     -- system time input from external MTIME (available if IO_MTIME_EN = false) --
     mtime_i     => (others => '0'), -- current system time
     -- Interrupts --
+    nm_irq_i    => nm_irq_i_int,    -- non-maskable interrupt
     soc_firq_i  => soc_firq_i_int,  -- fast interrupt channels
     mtime_irq_i => '0',             -- machine timer interrupt, available if IO_MTIME_EN = false
     msw_irq_i   => msw_irq_i_int,   -- machine software interrupt
@@ -474,7 +479,7 @@ begin
 
   -- Wishbone transfer termination --
   wb_core.ack   <= ack_read or ack_write;
-  wb_core.err   <= (ack_read and err_read) or (ack_write and err_write);
+  wb_core.err   <= (ack_read and err_read) or (ack_write and err_write) or wb_core.lock;
 
 
 end neorv32_top_axi4lite_rtl;

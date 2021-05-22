@@ -55,10 +55,6 @@
 #define ADDR_UNREACHABLE    (IO_BASE_ADDRESS-4)
 //** external memory base address */
 #define EXT_MEM_BASE        (0xF0000000)
-//** exclusive access to this address will always succeed */
-#define ATOMIC_SUCCESS_ADDR (EXT_MEM_BASE + 0)
-//** exclusive access to this address will always fail */
-#define ATOMIC_FAILURE_ADDR (EXT_MEM_BASE + 4)
 /**@}*/
 
 
@@ -77,6 +73,9 @@ int cnt_ok   = 0;
 int cnt_test = 0;
 /// Global numbe rof available HPMs
 uint32_t num_hpm_cnts_global = 0;
+
+/// Variable to test atomic accessess
+uint32_t atomic_access_addr;
 
 
 /**********************************************************************//**
@@ -279,31 +278,37 @@ int main() {
   neorv32_cpu_csr_write(CSR_MCAUSE, 0);
   neorv32_uart_printf("[%i] mcounteren.cy CSR: ", cnt_test);
 
-  cnt_test++;
+  // skip if U-mode is not implemented
+  if (neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_U_EXT)) {
+    cnt_test++;
 
-  // do not allow user-level code to access cycle[h] CSRs
-  tmp_a = neorv32_cpu_csr_read(CSR_MCOUNTEREN);
-  tmp_a &= ~(1<<CSR_MCOUNTEREN_CY); // clear access right
-  neorv32_cpu_csr_write(CSR_MCOUNTEREN, tmp_a);
+    // do not allow user-level code to access cycle[h] CSRs
+    tmp_a = neorv32_cpu_csr_read(CSR_MCOUNTEREN);
+    tmp_a &= ~(1<<CSR_MCOUNTEREN_CY); // clear access right
+    neorv32_cpu_csr_write(CSR_MCOUNTEREN, tmp_a);
 
-  // switch to user mode (hart will be back in MACHINE mode when trap handler returns)
-  neorv32_cpu_goto_user_mode();
-  {
-    // access to cycle CSR is no longer allowed
-    tmp_a = neorv32_cpu_csr_read(CSR_CYCLE);
-  }
+    // switch to user mode (hart will be back in MACHINE mode when trap handler returns)
+    neorv32_cpu_goto_user_mode();
+    {
+      // access to cycle CSR is no longer allowed
+      tmp_a = neorv32_cpu_csr_read(CSR_CYCLE);
+    }
 
-  // make sure there was an illegal instruction trap
-  if (neorv32_cpu_csr_read(CSR_MCAUSE) == TRAP_CODE_I_ILLEGAL) {
-    if (tmp_a == 0) { // make sure user-level code CANNOT read locked CSR content!
-      test_ok();
+    // make sure there was an illegal instruction trap
+    if (neorv32_cpu_csr_read(CSR_MCAUSE) == TRAP_CODE_I_ILLEGAL) {
+      if (tmp_a == 0) { // make sure user-level code CANNOT read locked CSR content!
+        test_ok();
+      }
+      else {
+        test_fail();
+      }
     }
     else {
       test_fail();
     }
   }
-  else {
-    test_fail();
+    else {
+    neorv32_uart_printf("skipped (not implemented)\n");
   }
 
 
@@ -534,54 +539,6 @@ int main() {
     else {
       test_fail();
     }
-  }
-  else {
-    neorv32_uart_printf("skipped (not implemented)\n");
-  }
-
-
-  // ----------------------------------------------------------
-  // Test clearing pending interrupt (via mip CSR)
-  // ----------------------------------------------------------
-  neorv32_cpu_csr_write(CSR_MCAUSE, 0);
-  neorv32_uart_printf("[%i] Clear pending IRQ (via mip CSR) test (from MTIME): ", cnt_test);
-
-  if (neorv32_mtime_available()) {
-    cnt_test++;
-
-    // disable global interrupts
-    neorv32_cpu_dint();
-
-    // force MTIME IRQ
-    neorv32_mtime_set_timecmp(0);
-
-    // wait some time for the IRQ to arrive the CPU
-    asm volatile("nop");
-    asm volatile("nop");
-
-    // no more mtime interrupts
-    neorv32_mtime_set_timecmp(-1);
-
-
-    if (neorv32_cpu_csr_read(CSR_MIP) & (1 << CSR_MIP_MTIP)) { // make sure MTIP is pending
-
-      neorv32_cpu_csr_write(CSR_MIP, 0); // just clear all pending IRQs
-      neorv32_cpu_eint(); // re-enable global interrupts
-      if (neorv32_cpu_csr_read(CSR_MCAUSE) == 0) {
-        test_ok();
-      }
-      else {
-        neorv32_uart_printf("IRQ triggered! ");
-        test_fail();
-      }
-    }
-    else {
-      neorv32_uart_printf("MTIP not pending! ");
-      test_fail();
-    }
-
-    // re-enable global interrupts
-    neorv32_cpu_eint();
   }
   else {
     neorv32_uart_printf("skipped (not implemented)\n");
@@ -837,10 +794,18 @@ int main() {
   if (neorv32_mtime_available()) {
     cnt_test++;
 
-    // force MTIME IRQ
-    neorv32_mtime_set_timecmp(0);
+    // configure MTIME IRQ (and check overflow form low owrd to high word)
+    neorv32_mtime_set_timecmp(-1);
+    neorv32_mtime_set_time(0);
 
-    // wait some time for the IRQ to arrive the CPU
+    neorv32_cpu_csr_write(CSR_MIP, 0); // clear all pending IRQs
+
+    neorv32_mtime_set_timecmp(0x0000000100000000ULL);
+    neorv32_mtime_set_time(   0x00000000FFFFFFFEULL);
+
+    // wait some time for the IRQ to trigger and arrive the CPU
+    asm volatile("nop");
+    asm volatile("nop");
     asm volatile("nop");
     asm volatile("nop");
 
@@ -904,6 +869,34 @@ int main() {
     asm volatile("nop");
 
     if (neorv32_cpu_csr_read(CSR_MCAUSE) == TRAP_CODE_MEI) {
+      test_ok();
+    }
+    else {
+      test_fail();
+    }
+  }
+  else {
+    neorv32_uart_printf("skipped (on real HW)\n");
+  }
+
+
+  // ----------------------------------------------------------
+  // Non-maskable interrupt (NMI) via testbench
+  // ----------------------------------------------------------
+  neorv32_cpu_csr_write(CSR_MCAUSE, 0);
+  neorv32_uart_printf("[%i] NMI (via testbench) IRQ: ", cnt_test);
+
+  if (is_simulation) { // check if this is a simulation
+    cnt_test++;
+
+    // trigger IRQ
+    sim_irq_trigger(1 << 0);
+
+    // wait some time for the IRQ to arrive the CPU
+    asm volatile("nop");
+    asm volatile("nop");
+
+    if (neorv32_cpu_csr_read(CSR_MCAUSE) == TRAP_CODE_NMI) {
       test_ok();
     }
     else {
@@ -1458,7 +1451,7 @@ int main() {
 
 
     // ------ EXECUTE: should fail ------
-    neorv32_uart_printf("[%i] PMP: U-mode [!X,!W,R] execute:  ", cnt_test);
+    neorv32_uart_printf("[%i] PMP: U-mode [!X,!W,R] execute: ", cnt_test);
     cnt_test++;
     neorv32_cpu_csr_write(CSR_MCAUSE, 0);
 
@@ -1483,7 +1476,7 @@ int main() {
 
 
     // ------ LOAD: should work ------
-    neorv32_uart_printf("[%i] PMP: U-mode [!X,!W,R] read:     ", cnt_test);
+    neorv32_uart_printf("[%i] PMP: U-mode [!X,!W,R] read: ", cnt_test);
     cnt_test++;
     neorv32_cpu_csr_write(CSR_MCAUSE, 0);
 
@@ -1508,7 +1501,7 @@ int main() {
 
 
     // ------ STORE: should fail ------
-    neorv32_uart_printf("[%i] PMP: U-mode [!X,!W,R] write:    ", cnt_test);
+    neorv32_uart_printf("[%i] PMP: U-mode [!X,!W,R] write: ", cnt_test);
     cnt_test++;
     neorv32_cpu_csr_write(CSR_MCAUSE, 0);
 
@@ -1563,34 +1556,33 @@ int main() {
   // Test atomic LR/SC operation - should succeed
   // ----------------------------------------------------------
   neorv32_cpu_csr_write(CSR_MCAUSE, 0);
-  neorv32_uart_printf("[%i] Atomic access (LR+SC) test (succeeding access): ", cnt_test);
+  neorv32_uart_printf("[%i] Atomic access (LR+SC succeeding access): ", cnt_test);
 
 #ifdef __riscv_atomic
-  if (is_simulation) { // check if this is a simulation
+  // skip if A-mode is not implemented
+  if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A_EXT)) != 0) {
 
-    // skip if A-mode is not implemented
-    if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A_EXT)) != 0) {
+    cnt_test++;
 
-      cnt_test++;
+    neorv32_cpu_store_unsigned_word((uint32_t)&atomic_access_addr, 0x11223344);
 
-      neorv32_cpu_store_unsigned_word(ATOMIC_SUCCESS_ADDR, 0x11223344);
+    tmp_a = neorv32_cpu_load_reservate_word((uint32_t)&atomic_access_addr); // make reservation
+    asm volatile ("nop");
+    tmp_b = neorv32_cpu_store_conditional((uint32_t)&atomic_access_addr, 0x22446688);
 
-      // atomic compare-and-swap
-      if ((neorv32_cpu_atomic_cas((uint32_t)ATOMIC_SUCCESS_ADDR, 0x11223344, 0xAABBCCDD) == 0) && // status: success
-          (neorv32_cpu_load_unsigned_word(ATOMIC_SUCCESS_ADDR) == 0xAABBCCDD) && // data written correctly
-          (neorv32_cpu_csr_read(CSR_MCAUSE) == 0)) { // no exception triggered
-        test_ok();
-      }
-      else {
-        test_fail();
-      }
+    // atomic access
+    if ((tmp_b == 0) && // status: success
+        (tmp_a == 0x11223344) && // correct data read
+        (neorv32_cpu_load_unsigned_word((uint32_t)&atomic_access_addr) == 0x22446688) && // correct data write
+        (neorv32_cpu_csr_read(CSR_MCAUSE) == 0)) { // no exception triggered
+      test_ok();
     }
     else {
-      neorv32_uart_printf("skipped (not implemented)\n");
+      test_fail();
     }
   }
   else {
-    neorv32_uart_printf("skipped (on real HW)\n");
+    neorv32_uart_printf("skipped (not implemented)\n");
   }
 #else
   neorv32_uart_printf("skipped (not implemented)\n");
@@ -1601,29 +1593,64 @@ int main() {
   // Test atomic LR/SC operation - should fail
   // ----------------------------------------------------------
   neorv32_cpu_csr_write(CSR_MCAUSE, 0);
-  neorv32_uart_printf("[%i] Atomic access (LR+SC) test (failing access): ", cnt_test);
+  neorv32_uart_printf("[%i] Atomic access (LR+SC failing access 1): ", cnt_test);
 
 #ifdef __riscv_atomic
-  if (is_simulation) { // check if this is a simulation
+  // skip if A-mode is not implemented
+  if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A_EXT)) != 0) {
 
-    // skip if A-mode is not implemented
-    if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A_EXT)) != 0) {
+    cnt_test++;
 
-      cnt_test++;
+    neorv32_cpu_store_unsigned_word((uint32_t)&atomic_access_addr, 0xAABBCCDD);
 
-      neorv32_cpu_store_unsigned_word(ATOMIC_FAILURE_ADDR, 0x55667788);
+    // atomic access
+    tmp_a = neorv32_cpu_load_reservate_word((uint32_t)&atomic_access_addr); // make reservation
+    neorv32_cpu_store_unsigned_word((uint32_t)&atomic_access_addr, 0xDEADDEAD); // destroy reservation
+    tmp_b = neorv32_cpu_store_conditional((uint32_t)&atomic_access_addr, 0x22446688);
 
-      // atomic compare-and-swap
-      if ((neorv32_cpu_atomic_cas((uint32_t)ATOMIC_FAILURE_ADDR, 0x55667788, 0xEEFFDDBB) != 0) && // staus: failed
-          (neorv32_cpu_csr_read(CSR_MCAUSE) == 0)) { // no exception triggered
-        test_ok();
-      }
-      else {
-        test_fail();
-      }
+    if ((tmp_b != 0) && // status: fail
+        (tmp_a == 0xAABBCCDD) && // correct data read
+        (neorv32_cpu_load_unsigned_word((uint32_t)&atomic_access_addr) == 0xDEADDEAD)) { // correct data write
+      test_ok();
     }
     else {
-      neorv32_uart_printf("skipped (not implemented)\n");
+      test_fail();
+    }
+  }
+  else {
+    neorv32_uart_printf("skipped (not implemented)\n");
+  }
+#else
+  neorv32_uart_printf("skipped (not implemented)\n");
+#endif
+
+
+  // ----------------------------------------------------------
+  // Test atomic LR/SC operation - should fail
+  // ----------------------------------------------------------
+  neorv32_cpu_csr_write(CSR_MCAUSE, 0);
+  neorv32_uart_printf("[%i] Atomic access (LR+SC failing access 2): ", cnt_test);
+
+#ifdef __riscv_atomic
+  // skip if A-mode is not implemented
+  if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A_EXT)) != 0) {
+
+    cnt_test++;
+
+    neorv32_cpu_store_unsigned_word((uint32_t)&atomic_access_addr, 0x12341234);
+
+    // atomic access
+    tmp_a = neorv32_cpu_load_reservate_word((uint32_t)&atomic_access_addr); // make reservation
+    asm volatile ("ecall"); // destroy reservation via trap (simulate a context switch)
+    tmp_b = neorv32_cpu_store_conditional((uint32_t)&atomic_access_addr, 0xDEADBEEF);
+
+    if ((tmp_b != 0) && // status: fail
+        (tmp_a == 0x12341234) && // correct data read
+        (neorv32_cpu_load_unsigned_word((uint32_t)&atomic_access_addr) == 0x12341234)) { // correct data write
+      test_ok();
+    }
+    else {
+      test_fail();
     }
   }
   else {

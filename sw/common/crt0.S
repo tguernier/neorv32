@@ -38,10 +38,6 @@
 .global _start
 
 
-// IO region
-.equ IO_BEGIN, 0xFFFFFF00 // start of processor-internal IO region
-
-
 _start:
 .cfi_startproc
 .cfi_undefined ra
@@ -58,8 +54,8 @@ __crt0_reg_file_clear:
   addi  x5, x0, 0
   addi  x6, x0, 0
   addi  x7, x0, 0
-  addi  x8, x0, 0
-  addi  x9, x0, 0
+//addi  x8, x0, 0
+//addi  x9, x0, 0
 //addi x10, x0, 0
 //addi x11, x0, 0
 //addi x12, x0, 0
@@ -104,11 +100,11 @@ __crt0_cpu_csr_init:
 
   // stop all counters except for [m]cycle[h] and [m]instret[h]
   li   x11, ~5
-  csrw mcountinhibit, x11
+  csrw 0x320, x11 // mcountinhibit (literal address for lagacy toolchain compatibility)
 
   // clear cycle counters
-  csrw mcycle,    zero
-  csrw mcycleh,   zero
+  csrw mcycle,  zero
+  csrw mcycleh, zero
 
   // clear instruction counters
   csrw minstret,  zero
@@ -152,12 +148,13 @@ __crt0_cpu_csr_init:
 // which is captured but actually ignored due to the dummy handler.
 // *********************************************************
 __crt0_reset_io:
-  li x11, IO_BEGIN // start of processor-internal IO region
+  la x8, __ctr0_io_space_begin // start of processor-internal IO region
+  la x9, __ctr0_io_space_end   // end of processor-internal IO region
 
 __crt0_reset_io_loop:
-  sw   zero, 0(x11)
-  addi x11, x11, 4
-  bne  zero, x11, __crt0_reset_io_loop
+  sw   zero, 0(x8)
+  addi x8,   x8, 4
+  bne  x8,   x9, __crt0_reset_io_loop
 
 
 // *********************************************************

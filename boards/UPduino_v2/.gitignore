@@ -1,0 +1,11 @@
+impl_1
+*.dir
+source
+
+.*
+!*.gitignore
+*.xml
+*.ini
+*.html
+*.sty
+!*.bin

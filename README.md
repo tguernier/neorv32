@@ -6,6 +6,7 @@
 [![riscv-arch-test](https://github.com/stnolting/neorv32/actions/workflows/riscv-arch-test.yml/badge.svg)](https://github.com/stnolting/neorv32/actions/workflows/riscv-arch-test.yml)
 [![license](https://img.shields.io/github/license/stnolting/neorv32)](https://github.com/stnolting/neorv32/blob/master/LICENSE)
 [![release](https://img.shields.io/github/v/release/stnolting/neorv32)](https://github.com/stnolting/neorv32/releases)
+[![datasheet](https://img.shields.io/badge/data%20sheet-NEORV32.pdf-ffbd00)](https://raw.githubusercontent.com/stnolting/neorv32/master/docs/NEORV32.pdf)
 
 * [Overview](#Overview)
 * [Status](#Status)
@@ -28,6 +29,8 @@ on the RISC-V NEORV32 CPU. The processor is intended as auxiliary processor in l
 designs or as *ready-to-go* stand-alone custom microcontroller.
 
 :books: For detailed information take a look at the [NEORV32 data sheet (pdf)](https://raw.githubusercontent.com/stnolting/neorv32/master/docs/NEORV32.pdf).
+The `asciidoc` sources can be found in [`docs/src_adoc`](https://github.com/stnolting/neorv32/blob/master/docs/src_adoc). The latest automatic build
+can be downloaded as artifacts from the [_Build Data Sheet_ GitHub workflow](https://github.com/stnolting/neorv32/actions/workflows/build_datasheet.yml).
 The doxygen-based documentation of the *software framework* is available online at [GitHub-pages](https://stnolting.github.io/neorv32/files.html).
 
 :label: The project’s change log is available as [CHANGELOG.md](https://github.com/stnolting/neorv32/blob/master/CHANGELOG.md) in the root directory of this repository.
@@ -99,8 +102,10 @@ if you have questions, comments, ideas or bug-fixes. Check out how to [contribut
 
 ### Status
 
-The processor is [synthesizable](#FPGA-Implementation-Results) (tested on *real hardware* using Intel Quartus Prime, Xilinx Vivado and Lattice Radiant/Synplify Pro) and can successfully execute
-all the [provided example programs](https://github.com/stnolting/neorv32/tree/master/sw/example) including the [CoreMark benchmark](#CoreMark-Benchmark).
+The processor is [synthesizable](#FPGA-Implementation-Results) (tested on *real hardware* using Intel Quartus Prime, Xilinx Vivado and Lattice Radiant) and can successfully execute
+all the [provided example programs](https://github.com/stnolting/neorv32/tree/master/sw/example) including the [CoreMark benchmark](#CoreMark-Benchmark) and the custom
+NEORV32 processor check ([`sw/example/cpu_test`](https://github.com/stnolting/neorv32/tree/master/sw/example/cpu_test), see the status report in the according
+[GitHub workflow](https://github.com/stnolting/neorv32/actions/workflows/processor-check.yml)).
 
 **RISC-V Architecture Tests**: The processor passes the official `rv32_m/C`, `rv32_m/I`, `rv32_m/M`, `rv32_m/privilege` and `rv32_m/Zifencei`
 [riscv-arch-test](https://github.com/riscv/riscv-arch-test) tests. More information regarding the NEORV32 port of the riscv-arch-test test framework can be found in
@@ -108,10 +113,11 @@ all the [provided example programs](https://github.com/stnolting/neorv32/tree/ma
 
 | Project component | CI status |
 |:----------------- |:----------|
-| [NEORV32 processor](https://github.com/stnolting/neorv32)                                              | [![Processor Check](https://github.com/stnolting/neorv32/workflows/Processor%20Check/badge.svg)](https://github.com/stnolting/neorv32/actions?query=workflow%3A%22Processor+Check%22) |
-| [SW Framework Documentation (online at GH-pages)](https://stnolting.github.io/neorv32/files.html)        | [![Doc@GitHub-pages](https://github.com/stnolting/neorv32/workflows/Deploy%20SW%20Framework%20Documentation%20to%20GitHub-Pages/badge.svg)](https://stnolting.github.io/neorv32/files.html) |
-| [Pre-built toolchains](https://github.com/stnolting/riscv-gcc-prebuilt)                                | [![Test Toolchains](https://github.com/stnolting/riscv-gcc-prebuilt/workflows/Test%20Toolchains/badge.svg)](https://github.com/stnolting/riscv-gcc-prebuilt/actions?query=workflow%3A%22Test+Toolchains%22) |
-| [RISC-V architecture test](https://github.com/stnolting/neorv32/blob/master/riscv-arch-test/README.md) | [![riscv-arch-test](https://github.com/stnolting/neorv32/actions/workflows/riscv-arch-test.yml/badge.svg)](https://github.com/stnolting/neorv32/actions/workflows/riscv-arch-test.yml) |
+| [NEORV32 processor](https://github.com/stnolting/neorv32)                                                  | [![Processor Check](https://github.com/stnolting/neorv32/workflows/Processor%20Check/badge.svg)](https://github.com/stnolting/neorv32/actions?query=workflow%3A%22Processor+Check%22) |
+| [SW Framework Documentation (online at GH-pages)](https://stnolting.github.io/neorv32/files.html)          | [![Doc@GitHub-pages](https://github.com/stnolting/neorv32/workflows/Deploy%20SW%20Framework%20Documentation%20to%20GitHub-Pages/badge.svg)](https://stnolting.github.io/neorv32/files.html) |
+| Build data sheet from [`asciidoc` sources](https://github.com/stnolting/neorv32/blob/master/docs/src_adoc) | [![Build Data Sheet](https://github.com/stnolting/neorv32/actions/workflows/build_datasheet.yml/badge.svg)](https://github.com/stnolting/neorv32/actions/workflows/build_datasheet.yml) |
+| [Pre-built toolchains](https://github.com/stnolting/riscv-gcc-prebuilt)                                    | [![Test Toolchains](https://github.com/stnolting/riscv-gcc-prebuilt/workflows/Test%20Toolchains/badge.svg)](https://github.com/stnolting/riscv-gcc-prebuilt/actions?query=workflow%3A%22Test+Toolchains%22) |
+| [RISC-V architecture test](https://github.com/stnolting/neorv32/blob/master/riscv-arch-test/README.md)     | [![riscv-arch-test](https://github.com/stnolting/neorv32/actions/workflows/riscv-arch-test.yml/badge.svg)](https://github.com/stnolting/neorv32/actions/workflows/riscv-arch-test.yml) |
 
 
 ## Features
@@ -282,6 +288,7 @@ the [:page_facing_up: NEORV32 data sheet](https://raw.githubusercontent.com/stno
     * Environment call from U-mode (via `ecall` instruction in user mode)
     * Environment call from M-mode (via `ecall` instruction in machine mode)
   * Supported interrupts:
+    * RISC-V non-maskable interrupt `nmi` (via external signal)
     * RISC-V machine timer interrupt `mti` (via processor-internal MTIME unit *or* external signal)
     * RISC-V machine software interrupt `msi` (via external signal)
     * RISC-V machine external interrupt `mei` (via external signal)
@@ -319,6 +326,7 @@ the [:page_facing_up: NEORV32 data sheet](https://raw.githubusercontent.com/stno
 
 * CPU and Processor are BIG-ENDIAN, but this should be no problem as the external memory bus interface provides big- and little-endian configurations
 * `misa` CSR is read-only - no dynamic enabling/disabling of synthesized CPU extensions during runtime; for compatibility: write accesses (in m-mode) are ignored and do not cause an exception
+* `mip` CSR is read-only - pending IRQs can be cleared using `mie`
 * The physical memory protection (**PMP**) only supports `NAPOT` mode yet and a minimal granularity of 8 bytes
 * The `A` extension only implements `lr.w` and `sc.w` instructions yet. However, these instructions are sufficient to emulate all remaining AMO operations
 
@@ -357,28 +365,30 @@ However, the size of the register file is cut in half.
 
 ### NEORV32 Processor-Internal Peripherals and Memories
 
-Results generated for hardware version [`1.5.3.2`](https://github.com/stnolting/neorv32/blob/master/CHANGELOG.md).
+Results generated for hardware version [`1.5.4.9`](https://github.com/stnolting/neorv32/blob/master/CHANGELOG.md)
+(mandatory core modules in **bold**).
 
-| Module    | Description                                          | LEs | FFs | Memory bits | DSPs (9-bit) |
-|:----------|:-----------------------------------------------------|----:|----:|------------:|-------------:|
-| BOOT ROM  | Bootloader ROM (default 4kB)                         |   3 |   1 |      32 768 |            0 |
-| BUSSWITCH | Bus mux for CPU instr. & data interfaces             |  65 |   8 |           0 |            0 |
-| i-CACHE   | Proc.-int. nstruction cache (default 1x4x64 bytes)   | 234 | 156 |       8 192 |            0 |
-| CFS       | Custom functions subsystem                           |   - |   - |           - |            - |
-| DMEM      | Processor-internal data memory (default 8kB)         |   6 |   2 |      65 536 |            0 |
-| GPIO      | General purpose input/output ports                   |  67 |  65 |           0 |            0 |
-| IMEM      | Processor-internal instruction memory (default 16kb) |   6 |   2 |     131 072 |            0 |
-| MTIME     | Machine system timer                                 | 274 | 166 |           0 |            0 |
-| NCO       | Numerically-controlled oscillator                    | 254 | 226 |           0 |            0 |
-| NEOLED    | Smart LED Interface (NeoPixel-compatibile) [4x FIFO] | 347 | 309 |           0 |            0 |
-| PWM       | Pulse-width modulation controller                    |  71 |  69 |           0 |            0 |
-| SPI       | Serial peripheral interface                          | 138 | 124 |           0 |            0 |
-| SYSINFO   | System configuration information memory              |  11 |  10 |           0 |            0 |
-| TRNG      | True random number generator                         | 132 | 105 |           0 |            0 |
-| TWI       | Two-wire interface                                   |  77 |  46 |           0 |            0 |
-| UART0/1   | Universal asynchronous receiver/transmitter 0/1      | 176 | 132 |           0 |            0 |
-| WDT       | Watchdog timer                                       |  60 |  45 |           0 |            0 |
-| WISHBONE  | External memory interface                            | 129 | 104 |           0 |            0 |
+| Module        | Description                                         | LEs | FFs | Memory bits | DSPs (9-bit) |
+|:--------------|:----------------------------------------------------|----:|----:|------------:|-------------:|
+| Boot ROM      | Bootloader ROM (4kB)                                |   3 |   1 |       32768 |    0         |
+| **BUSKEEPER** | Processor-internal bus monitor                      |  11 |   6 |           0 |    0         |
+| **BUSSWITCH** | Bus mux for CPU instr. and data interface           |  49 |   8 |           0 |    0         |
+| CFS           | Custom functions subsystem                          |   - |   - |           - |    -         |
+| DMEM          | Processor-internal data memory (8kB)                |  18 |   2 |       65536 |    0         |
+| GPIO          | General purpose input/output ports                  |  67 |  65 |           0 |    0         |
+| iCACHE        | Instruction cache (1x4 blocks, 256 bytes per block) | 220 | 154 |        8192 |    0         |
+| IMEM          | Processor-internal instruction memory (16kB)        |   6 |   2 |      131072 |    0         |
+| MTIME         | Machine system timer                                | 289 | 200 |           0 |    0         |
+| NCO           | Numerically-controlled oscillator                   | 254 | 226 |           0 |    0         |
+| NEOLED        | Smart LED Interface (NeoPixel/WS28128) [4xFIFO]     | 347 | 309 |           0 |    0         |
+| PWM           | Pulse_width modulation controller                   |  71 |  69 |           0 |    0         |
+| SPI           | Serial peripheral interface                         | 138 | 124 |           0 |    0         |
+| **SYSINFO**   | System configuration information memory             |  10 |  10 |           0 |    0         |
+| TRNG          | True random number generator                        | 132 | 105 |           0 |    0         |
+| TWI           | Two-wire interface                                  |  77 |  44 |           0 |    0         |
+| UART0/1       | Universal asynchronous receiver/transmitter 0/1     | 176 | 132 |           0 |    0         |
+| WDT           | Watchdog timer                                      |  60 |  45 |           0 |    0         |
+| WISHBONE      | External memory interface                           | 129 | 104 |           0 |    0         |
 
 [[back to top](#The-NEORV32-RISC-V-Processor)]
 
@@ -401,7 +411,6 @@ Results generated for hardware version [`1.4.9.0`](https://github.com/stnolting/
 **_Notes_**
 * The "default" implementation strategy of the according toolchain is used.
 * The Lattice iCE40 UltraPlus setup uses the FPGA's SPRAM memory primitives for the internal IMEM and DMEM (each 64kb).
-The FPGA-specific memory components can be found in [`rtl/fpga_specific`](https://github.com/stnolting/neorv32/blob/master/rtl/fpga_specific/lattice_ice40up).
 * The clock frequencies marked with a "c" are constrained clocks. The remaining ones are _f_max_ results from the place and route timing reports.
 * The Upduino and the Arty board have on-board SPI flash memories for storing the FPGA configuration. These device can also be used by the default NEORV32
 bootloader to store and automatically boot an application program after reset (both tested successfully).
@@ -527,6 +536,22 @@ and is mapped to address `0x00000000 - 0x00003fff` (16kB), the second RAM is use
 This overview is just a short excerpt from the *Let's Get It Started* section of the NEORV32 documentary:
 
 [:page_facing_up: NEORV32 data sheet](https://raw.githubusercontent.com/stnolting/neorv32/master/docs/NEORV32.pdf)
+
+
+### 0. Build the Documentation
+
+This step is optional since there are pre-built versions of the [processor data sheet](https://raw.githubusercontent.com/stnolting/neorv32/master/docs/NEORV32.pdf)
+and the [software documentation](https://stnolting.github.io/neorv32/files.html). If you want to build the documentation by yourself:
+
+**NEORV32 Data Sheet**
+
+To build the data sheet open a console and navigate to the project's `docs` folder. Run `$ sh make_datasheet.sh` (make sure `asciidoctor-pdf` is installed).
+This will take all the `asciidoc` sources from [`docs/src_adoc`](https://github.com/stnolting/neorv32/blob/master/docs/src_adoc) to generate `docs/NEORV32.pdf`.
+
+**Software Framework Documentation**
+
+Make sure `doxygen` is installed. Open a console and navigate to the project's `docs` folder and run `$ doxygen Doxyfile`. This will create (if not already there)
+a new folder `docs/doxygen_build/html` where doxygen will generate the HTML-based documentation pages. Open `docs/doxygen_build/html/files.html` to get started.
 
 
 ### 1. Get the Toolchain

@@ -322,45 +322,6 @@ void __attribute__((naked)) neorv32_cpu_goto_user_mode(void) {
 
 
 /**********************************************************************//**
- * Atomic compare-and-swap operation (for implemeneting semaphores and mutexes).
- *
- * @warning This function requires the A (atomic) CPU extension.
- *
- * @param[in] addr Address of memory location.
- * @param[in] expected Expected value (for comparison).
- * @param[in] desired Desired value (new value).
- * @return Returns 0 on success, 1 on failure.
- **************************************************************************/
-int __attribute__ ((noinline)) neorv32_cpu_atomic_cas(uint32_t addr, uint32_t expected, uint32_t desired) {
-#ifdef __riscv_atomic
-
-  register uint32_t addr_reg = addr;
-  register uint32_t des_reg = desired;
-  register uint32_t tmp_reg;
-
-  // load original value + reservation (lock)
-  asm volatile ("lr.w %[result], (%[input])" : [result] "=r" (tmp_reg) : [input] "r" (addr_reg));
-
-  if (tmp_reg != expected) {
-    asm volatile ("lw x0, 0(%[input])" : : [input] "r" (addr_reg)); // clear reservation lock
-    return 1;
-  }
-
-  // store-conditional
-  asm volatile ("sc.w %[result], %[input_i], (%[input_j])" : [result] "=r" (tmp_reg) : [input_i] "r" (des_reg), [input_j] "r" (addr_reg));
-
-  if (tmp_reg) {
-    return 1;
-  }
-
-  return 0;
-#else
-  return 1; // A extension not implemented - function always fails
-#endif
-}
-
-
-/**********************************************************************//**
  * Physical memory protection (PMP): Get number of available regions.
  *
  * @warning This function overrides all available PMPCFG* CSRs.
@@ -369,6 +330,11 @@ int __attribute__ ((noinline)) neorv32_cpu_atomic_cas(uint32_t addr, uint32_t ex
  * @return Returns number of available PMP regions.
  **************************************************************************/
 uint32_t neorv32_cpu_pmp_get_num_regions(void) {
+
+  // PMP implemented at all?
+  if ((neorv32_cpu_csr_read(CSR_MZEXT) & (1<<CSR_MZEXT_PMP)) == 0) {
+    return 0;
+  }
 
   uint32_t i = 0;
 
@@ -626,9 +592,14 @@ static void __neorv32_cpu_pmp_cfg_write(uint32_t index, uint32_t data) {
  *
  * @warning This function overrides all available mhpmcounter* CSRs.
  *
- * @return Returns number of available HPM counters (..29).
+ * @return Returns number of available HPM counters (0..29).
  **************************************************************************/
 uint32_t neorv32_cpu_hpm_get_counters(void) {
+
+  // HPMs implemented at all?
+  if ((neorv32_cpu_csr_read(CSR_MZEXT) & (1<<CSR_MZEXT_HPM)) == 0) {
+    return 0;
+  }
 
   // inhibit all HPM counters
   uint32_t tmp = neorv32_cpu_csr_read(CSR_MCOUNTINHIBIT);
@@ -704,9 +675,14 @@ uint32_t neorv32_cpu_hpm_get_counters(void) {
  *
  * @warning This function overrides mhpmcounter3[h] CSRs.
  *
- * @return Size of HPM counter bits (1-64).
+ * @return Size of HPM counter bits (1-64, 0 if not implemented at all).
  **************************************************************************/
 uint32_t neorv32_cpu_hpm_get_size(void) {
+
+  // HPMs implemented at all?
+  if ((neorv32_cpu_csr_read(CSR_MZEXT) & (1<<CSR_MZEXT_HPM)) == 0) {
+    return 0;
+  }
 
   // inhibt auto-update
   asm volatile ("csrwi %[addr], %[imm]" : : [addr] "i" (CSR_MCOUNTINHIBIT), [imm] "i" (1<<CSR_MCOUNTEREN_HPM3));

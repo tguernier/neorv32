@@ -4,7 +4,7 @@
 set -e
 
 # Default simulation configuration
-SIM_CONFIG=--stop-time=7ms
+SIM_CONFIG=--stop-time=8ms
 
 # Project home folder
 homedir="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
@@ -41,6 +41,7 @@ ghdl -a --work=neorv32 $srcdir_core/neorv32_bootloader_image.vhd
 #
 ghdl -a --work=neorv32 $srcdir_core/neorv32_boot_rom.vhd
 ghdl -a --work=neorv32 $srcdir_core/neorv32_busswitch.vhd
+ghdl -a --work=neorv32 $srcdir_core/neorv32_bus_keeper.vhd
 ghdl -a --work=neorv32 $srcdir_core/neorv32_icache.vhd
 ghdl -a --work=neorv32 $srcdir_core/neorv32_cfs.vhd
 ghdl -a --work=neorv32 $srcdir_core/neorv32_cpu.vhd

@@ -1,11 +1,12 @@
 -- #################################################################################################
 -- # << NEORV32 - Processor-Internal DMEM for Lattice iCE40 UltraPlus >>                           #
 -- # ********************************************************************************************* #
--- # Memory has a logical size of 64kb (2 x SPRAMs). Logical size DMEM_SIZE must be less or equal. #
+-- # Memory has a physical size of 64kb (2 x SPRAMs).                                              #
+-- # Logical size DMEM_SIZE must be less or equal.                                                 #
 -- # ********************************************************************************************* #
 -- # BSD 3-Clause License                                                                          #
 -- #                                                                                               #
--- # Copyright (c) 2020, Stephan Nolting. All rights reserved.                                     #
+-- # Copyright (c) 2021, Stephan Nolting. All rights reserved.                                     #
 -- #                                                                                               #
 -- # Redistribution and use in source and binary forms, with or without modification, are          #
 -- # permitted provided that the following conditions are met:                                     #
@@ -47,7 +48,7 @@ use iCE40UP.components.all;
 entity neorv32_dmem is
   generic (
     DMEM_BASE : std_ulogic_vector(31 downto 0) := x"80000000"; -- memory base address
-    DMEM_SIZE : natural := 32*1024  -- processor-internal instruction memory size in bytes
+    DMEM_SIZE : natural := 64*1024 -- processor-internal instruction memory size in bytes
   );
   port (
     clk_i  : in  std_ulogic; -- global clock line
@@ -72,10 +73,10 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   constant lo_abb_c : natural := index_size_f(64*1024); -- low address boundary bit
 
   -- local signals --
-  signal acc_en  : std_ulogic;
-  signal mem_cs  : std_ulogic;
-  signal rdata   : std_ulogic_vector(31 downto 0);
-  signal rden    : std_ulogic;
+  signal acc_en : std_ulogic;
+  signal mem_cs : std_ulogic;
+  signal rdata  : std_ulogic_vector(31 downto 0);
+  signal rden   : std_ulogic;
 
   -- SPRAM signals --
   signal spram_clk   : std_logic;

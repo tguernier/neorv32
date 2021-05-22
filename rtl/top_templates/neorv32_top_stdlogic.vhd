@@ -81,6 +81,7 @@ entity neorv32_top_stdlogic is
     ICACHE_ASSOCIATIVITY         : natural := 1;      -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
     MEM_EXT_EN                   : boolean := false;  -- implement external memory bus interface?
+    MEM_EXT_TIMEOUT              : natural := 255;    -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Processor peripherals --
     IO_GPIO_EN                   : boolean := true;   -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN                  : boolean := true;   -- implement machine system timer (MTIME)?
@@ -103,7 +104,7 @@ entity neorv32_top_stdlogic is
     clk_i       : in  std_logic := '0'; -- global clock, rising edge
     rstn_i      : in  std_logic := '0'; -- global reset, low-active, async
     -- Wishbone bus interface (available if MEM_EXT_EN = true) --
-    wb_tag_o    : out std_logic_vector(03 downto 0); -- tag
+    wb_tag_o    : out std_logic_vector(02 downto 0); -- tag
     wb_adr_o    : out std_logic_vector(31 downto 0); -- address
     wb_dat_i    : in  std_logic_vector(31 downto 0) := (others => '0'); -- read data
     wb_dat_o    : out std_logic_vector(31 downto 0); -- write data
@@ -111,7 +112,7 @@ entity neorv32_top_stdlogic is
     wb_sel_o    : out std_logic_vector(03 downto 0); -- byte enable
     wb_stb_o    : out std_logic; -- strobe
     wb_cyc_o    : out std_logic; -- valid cycle
-    wb_tag_i    : in  std_logic; -- response tag
+    wb_lock_o   : out std_logic; -- exclusive access request
     wb_ack_i    : in  std_logic := '0'; -- transfer acknowledge
     wb_err_i    : in  std_logic := '0'; -- transfer error
     -- Advanced memory control signals (available if MEM_EXT_EN = true) --
@@ -150,6 +151,7 @@ entity neorv32_top_stdlogic is
     -- system time input from external MTIME (available if IO_MTIME_EN = false) --
     mtime_i     : in  std_logic_vector(63 downto 0) := (others => '0'); -- current system time
     -- Interrupts --
+    nm_irq_i    : in  std_logic := '0'; -- non-maskable interrupt
     soc_firq_i  : in  std_logic_vector(5 downto 0) := (others => '0'); -- fast interrupt channels
     mtime_irq_i : in  std_logic := '0'; -- machine timer interrupt, available if IO_MTIME_EN = false
     msw_irq_i   : in  std_logic := '0'; -- machine software interrupt
@@ -166,7 +168,7 @@ architecture neorv32_top_stdlogic_rtl of neorv32_top_stdlogic is
   signal clk_i_int       : std_ulogic;
   signal rstn_i_int      : std_ulogic;
   --
-  signal wb_tag_o_int    : std_ulogic_vector(03 downto 0);
+  signal wb_tag_o_int    : std_ulogic_vector(02 downto 0);
   signal wb_adr_o_int    : std_ulogic_vector(31 downto 0);
   signal wb_dat_i_int    : std_ulogic_vector(31 downto 0);
   signal wb_dat_o_int    : std_ulogic_vector(31 downto 0);
@@ -174,7 +176,7 @@ architecture neorv32_top_stdlogic_rtl of neorv32_top_stdlogic is
   signal wb_sel_o_int    : std_ulogic_vector(03 downto 0);
   signal wb_stb_o_int    : std_ulogic;
   signal wb_cyc_o_int    : std_ulogic;
-  signal wb_tag_i_int    : std_ulogic;
+  signal wb_lock_o_int   : std_ulogic;
   signal wb_ack_i_int    : std_ulogic;
   signal wb_err_i_int    : std_ulogic;
   --
@@ -210,6 +212,7 @@ architecture neorv32_top_stdlogic_rtl of neorv32_top_stdlogic is
   --
   signal mtime_i_int     : std_ulogic_vector(63 downto 0);
   --
+  signal nm_irq_i_int    : std_ulogic;
   signal soc_firq_i_int  : std_ulogic_vector(05 downto 0);
   signal mtime_irq_i_int : std_ulogic;
   signal msw_irq_i_int   : std_ulogic;
@@ -261,6 +264,7 @@ begin
     ICACHE_ASSOCIATIVITY         => ICACHE_ASSOCIATIVITY, -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
     MEM_EXT_EN                   => MEM_EXT_EN,         -- implement external memory bus interface?
+    MEM_EXT_TIMEOUT              => MEM_EXT_TIMEOUT,    -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Processor peripherals --
     IO_GPIO_EN                   => IO_GPIO_EN,         -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN                  => IO_MTIME_EN,        -- implement machine system timer (MTIME)?
@@ -291,7 +295,7 @@ begin
     wb_sel_o    => wb_sel_o_int,    -- byte enable
     wb_stb_o    => wb_stb_o_int,    -- strobe
     wb_cyc_o    => wb_cyc_o_int,    -- valid cycle
-    wb_tag_i    => wb_tag_i_int,    -- response tag
+    wb_lock_o   => wb_lock_o_int,   -- exclusive access request
     wb_ack_i    => wb_ack_i_int,    -- transfer acknowledge
     wb_err_i    => wb_err_i_int,    -- transfer error
     -- Advanced memory control signals (available if MEM_EXT_EN = true) --
@@ -330,6 +334,7 @@ begin
     -- system time input from external MTIME (available if IO_MTIME_EN = false) --
     mtime_i     => mtime_i_int,     -- current system time
     -- Interrupts --
+    nm_irq_i    => nm_irq_i_int,    -- non-maskable interrupt
     soc_firq_i  => soc_firq_i_int,  -- fast interrupt channels
     mtime_irq_i => mtime_irq_i_int, -- machine timer interrupt, available if IO_MTIME_EN = false
     msw_irq_i   => msw_irq_i_int,   -- machine software interrupt
@@ -348,6 +353,7 @@ begin
   wb_sel_o        <= std_logic_vector(wb_sel_o_int);
   wb_stb_o        <= std_logic(wb_stb_o_int);
   wb_cyc_o        <= std_logic(wb_cyc_o_int);
+  wb_lock_o       <= std_logic(wb_lock_o_int);
   wb_ack_i_int    <= std_ulogic(wb_ack_i);
   wb_err_i_int    <= std_ulogic(wb_err_i);
 

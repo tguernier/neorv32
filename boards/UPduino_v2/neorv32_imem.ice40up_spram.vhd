@@ -1,7 +1,8 @@
 -- #################################################################################################
 -- # << NEORV32 - Processor-Internal IMEM for Lattice iCE40 UltraPlus >>                           #
 -- # ********************************************************************************************* #
--- # Memory has a logical size of 64kb (2 x SPRAMs). Logical size IMEM_SIZE must be less or equal. #
+-- # Memory has a physical size of 64kb (2 x SPRAMs).                                              #
+-- # Logical size IMEM_SIZE must be less or equal.                                                 #
 -- # ********************************************************************************************* #
 -- # BSD 3-Clause License                                                                          #
 -- #                                                                                               #
@@ -48,8 +49,8 @@ entity neorv32_imem is
   generic (
     IMEM_BASE     : std_ulogic_vector(31 downto 0) := x"00000000"; -- memory base address
     IMEM_SIZE     : natural := 64*1024; -- processor-internal instruction memory size in bytes
-    IMEM_AS_ROM   : boolean := false;  -- implement IMEM as read-only memory?
-    BOOTLOADER_EN : boolean := true    -- implement and use bootloader?
+    IMEM_AS_ROM   : boolean := false;   -- implement IMEM as read-only memory?
+    BOOTLOADER_EN : boolean := true     -- implement and use bootloader?
   );
   port (
     clk_i  : in  std_ulogic; -- global clock line
@@ -59,7 +60,7 @@ entity neorv32_imem is
     addr_i : in  std_ulogic_vector(31 downto 0); -- address
     data_i : in  std_ulogic_vector(31 downto 0); -- data in
     data_o : out std_ulogic_vector(31 downto 0); -- data out
-    ack_o  : out std_ulogic  -- transfer acknowledge
+    ack_o  : out std_ulogic -- transfer acknowledge
   );
 end neorv32_imem;
 
@@ -74,10 +75,10 @@ architecture neorv32_imem_rtl of neorv32_imem is
   constant lo_abb_c : natural := index_size_f(64*1024); -- low address boundary bit
 
   -- local signals --
-  signal acc_en  : std_ulogic;
-  signal mem_cs  : std_ulogic;
-  signal rdata   : std_ulogic_vector(31 downto 0);
-  signal rden    : std_ulogic;
+  signal acc_en : std_ulogic;
+  signal mem_cs : std_ulogic;
+  signal rdata  : std_ulogic_vector(31 downto 0);
+  signal rden   : std_ulogic;
 
   -- SPRAM signals --
   signal spram_clk   : std_logic;

@@ -45,7 +45,7 @@
 /**********************************************************************//**
  * The >private< trap vector look-up table of the NEORV32 RTE.
  **************************************************************************/
-static uint32_t __neorv32_rte_vector_lut[29] __attribute__((unused)); // trap handler vector table
+static uint32_t __neorv32_rte_vector_lut[NEORV32_RTE_NUM_TRAPS] __attribute__((unused)); // trap handler vector table
 
 // private functions
 static void __attribute__((__interrupt__)) __neorv32_rte_core(void) __attribute__((aligned(16))) __attribute__((unused));
@@ -167,6 +167,7 @@ static void __attribute__((__interrupt__)) __attribute__((aligned(16)))  __neorv
     case TRAP_CODE_S_ACCESS:     rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_S_ACCESS]; break;
     case TRAP_CODE_UENV_CALL:    rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_UENV_CALL]; break;
     case TRAP_CODE_MENV_CALL:    rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MENV_CALL]; break;
+    case TRAP_CODE_NMI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_NMI]; break;
     case TRAP_CODE_MSI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MSI]; break;
     case TRAP_CODE_MTI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MTI]; break;
     case TRAP_CODE_MEI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MEI]; break;
@@ -273,8 +274,9 @@ void neorv32_rte_print_hw_config(void) {
 
   // Processor - general stuff
   neorv32_uart_printf("\n=== << General >> ===\n");
-  neorv32_uart_printf("Clock:   %u Hz\n", SYSINFO_CLK);
-  neorv32_uart_printf("User ID: 0x%x\n", SYSINFO_USER_CODE);
+  neorv32_uart_printf("Clock:         %u Hz\n", SYSINFO_CLK);
+  neorv32_uart_printf("User ID:       0x%x\n", SYSINFO_USER_CODE);
+  neorv32_uart_printf("Full HW reset: "); __neorv32_rte_print_true_false(SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_HW_RESET));
 
 
   // CPU configuration
@@ -370,7 +372,7 @@ void neorv32_rte_print_hw_config(void) {
   }
 
   // check hardware performance monitors
-  neorv32_uart_printf("HPM Counters:      %ux, %u-bit wide\n", neorv32_cpu_hpm_get_counters(), neorv32_cpu_hpm_get_size());
+  neorv32_uart_printf("HPM Counters:      %u counters, %u-bit wide\n", neorv32_cpu_hpm_get_counters(), neorv32_cpu_hpm_get_size());
 
 
   // Memory configuration

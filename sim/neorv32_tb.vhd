@@ -120,8 +120,8 @@ architecture neorv32_tb_rtl of neorv32_tb is
   signal spi_data : std_ulogic;
 
   -- irq --
-  signal msi_ring, mei_ring : std_ulogic;
-  signal soc_firq_ring      : std_ulogic_vector(5 downto 0);
+  signal msi_ring, mei_ring, nmi_ring : std_ulogic;
+  signal soc_firq_ring : std_ulogic_vector(5 downto 0);
 
   -- Wishbone bus --
   type wishbone_t is record
@@ -134,8 +134,8 @@ architecture neorv32_tb_rtl of neorv32_tb is
     cyc   : std_ulogic; -- valid cycle
     ack   : std_ulogic; -- transfer acknowledge
     err   : std_ulogic; -- transfer error
-    tag   : std_ulogic_vector(03 downto 0); -- request tag
-    tag_r : std_ulogic; -- response tag
+    tag   : std_ulogic_vector(02 downto 0); -- request tag
+    lock  : std_ulogic; -- exclusive access request
   end record;
   signal wb_cpu, wb_mem_a, wb_mem_b, wb_mem_c, wb_irq : wishbone_t;
 
@@ -209,10 +209,10 @@ begin
     TINY_SHIFT_EN                => false,         -- use tiny (single-bit) shifter for shift operations
     CPU_CNT_WIDTH                => 64,            -- total width of CPU cycle and instret counters (0..64)
     -- Physical Memory Protection (PMP) --
-    PMP_NUM_REGIONS              => 4,             -- number of regions (0..64)
+    PMP_NUM_REGIONS              => 5,             -- number of regions (0..64)
     PMP_MIN_GRANULARITY          => 64*1024,       -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
     -- Hardware Performance Monitors (HPM) --
-    HPM_NUM_CNTS                 => 12,            -- number of inmplemnted HPM counters (0..29)
+    HPM_NUM_CNTS                 => 12,            -- number of implemented HPM counters (0..29)
     HPM_CNT_WIDTH                => 40,            -- total size of HPM counters (1..64)
     -- Internal Instruction memory --
     MEM_INT_IMEM_EN              => int_imem_c ,   -- implement processor-internal instruction memory
@@ -228,6 +228,7 @@ begin
     ICACHE_ASSOCIATIVITY         => 2,             -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
     MEM_EXT_EN                   => true,          -- implement external memory bus interface?
+    MEM_EXT_TIMEOUT              => 255,           -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Processor peripherals --
     IO_GPIO_EN                   => true,          -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN                  => true,          -- implement machine system timer (MTIME)?
@@ -258,7 +259,7 @@ begin
     wb_sel_o    => wb_cpu.sel,      -- byte enable
     wb_stb_o    => wb_cpu.stb,      -- strobe
     wb_cyc_o    => wb_cpu.cyc,      -- valid cycle
-    wb_tag_i    => wb_cpu.tag_r,    -- response tag
+    wb_lock_o   => wb_cpu.lock,     -- exclusive access request
     wb_ack_i    => wb_cpu.ack,      -- transfer acknowledge
     wb_err_i    => wb_cpu.err,      -- transfer error
     -- Advanced memory control signals (available if MEM_EXT_EN = true) --
@@ -297,6 +298,7 @@ begin
     -- system time input from external MTIME (available if IO_MTIME_EN = false) --
     mtime_i     => (others => '0'), -- current system time
     -- Interrupts --
+    nm_irq_i    => nmi_ring,        -- non-maskable interrupt
     soc_firq_i  => soc_firq_ring,   -- fast interrupt channels
     mtime_irq_i => '0',             -- machine software interrupt, available if IO_MTIME_EN = false
     msw_irq_i   => msi_ring,        -- machine software interrupt
@@ -447,7 +449,6 @@ begin
   wb_cpu.rdata <= wb_mem_a.rdata or wb_mem_b.rdata or wb_mem_c.rdata or wb_irq.rdata;
   wb_cpu.ack   <= wb_mem_a.ack   or wb_mem_b.ack   or wb_mem_c.ack   or wb_irq.ack;
   wb_cpu.err   <= wb_mem_a.err   or wb_mem_b.err   or wb_mem_c.err   or wb_irq.err;
-  wb_cpu.tag_r <= wb_mem_a.tag_r or wb_mem_b.tag_r or wb_mem_c.tag_r or wb_irq.tag_r;
 
   -- peripheral select via STROBE signal --
   wb_mem_a.stb <= wb_cpu.stb when (wb_cpu.addr >= ext_mem_a_base_addr_c) and (wb_cpu.addr < std_ulogic_vector(unsigned(ext_mem_a_base_addr_c) + ext_mem_a_size_c)) else '0';
@@ -484,8 +485,7 @@ begin
       end if;
 
       -- bus output register --
-      wb_mem_a.err   <= '0';
-      wb_mem_a.tag_r <= '0';
+      wb_mem_a.err <= '0';
       if (ext_mem_a.ack(ext_mem_a_latency_c-1) = '1') and (wb_mem_b.cyc = '1') and (wb_mem_a.ack = '0') then
         wb_mem_a.rdata <= ext_mem_a.rdata(ext_mem_a_latency_c-1);
         wb_mem_a.ack   <= '1';
@@ -525,8 +525,7 @@ begin
       end if;
 
       -- bus output register --
-      wb_mem_b.err   <= '0';
-      wb_mem_b.tag_r <= '0';
+      wb_mem_b.err <= '0';
       if (ext_mem_b.ack(ext_mem_b_latency_c-1) = '1') and (wb_mem_b.cyc = '1') and (wb_mem_b.ack = '0') then
         wb_mem_b.rdata <= ext_mem_b.rdata(ext_mem_b_latency_c-1);
         wb_mem_b.ack   <= '1';
@@ -567,28 +566,22 @@ begin
 
       -- EXCLUSIVE bus access -----------------------------------------------------
       -- -----------------------------------------------------------------------------
-      -- make a reservation --
-      if ((wb_mem_c.cyc and wb_mem_c.stb) = '1') and -- valid access
-         (wb_mem_c.tag(3) = '1') and -- make a reservation if there is a request (LR.W instruction)
-         (wb_mem_c.addr(2) = '0') then -- only possible for even word-addresses - odd word-addresses will fail
-        ext_mem_c_atomic_reservation <= '1';
-      -- clear reservation --
-      elsif (wb_mem_c.ack = '1') and -- end of access
-            (wb_mem_c.tag(3) = '0') then -- end of exclusive access
-        ext_mem_c_atomic_reservation <= '0';
+      -- Since there is only one CPU in this design, the exclusive access reservation in THIS memory CANNOT fail.
+      -- However, this memory module is used to simulated failing LR/SC accesses.
+      if ((wb_mem_c.cyc and wb_mem_c.stb) = '1') then -- valid access
+        ext_mem_c_atomic_reservation <= wb_mem_c.lock; -- make reservation
       end if;
       -- -----------------------------------------------------------------------------
 
       -- bus output register --
-      wb_mem_c.err <= '0';
       if (ext_mem_c.ack(ext_mem_c_latency_c-1) = '1') and (wb_mem_c.cyc = '1') and (wb_mem_c.ack = '0') then
         wb_mem_c.rdata <= ext_mem_c.rdata(ext_mem_c_latency_c-1);
         wb_mem_c.ack   <= '1';
-        wb_mem_c.tag_r <= ext_mem_c_atomic_reservation;
+        wb_mem_c.err   <= ext_mem_c_atomic_reservation; -- issue a bus error if there is an exclusive access request
       else
         wb_mem_c.rdata <= (others => '0');
         wb_mem_c.ack   <= '0';
-        wb_mem_c.tag_r <= '0';
+        wb_mem_c.err   <= '0';
       end if;
     end if;
   end process ext_mem_c_access;
@@ -600,15 +593,16 @@ begin
   begin
     if rising_edge(clk_gen) then
       -- bus interface --
-      wb_irq.rdata  <= (others => '0');
-      wb_irq.ack    <= wb_irq.cyc and wb_irq.stb and wb_irq.we and and_all_f(wb_irq.sel);
-      wb_irq.err    <= '0';
-      wb_irq.tag_r  <= '0';
+      wb_irq.rdata <= (others => '0');
+      wb_irq.ack   <= wb_irq.cyc and wb_irq.stb and wb_irq.we and and_all_f(wb_irq.sel);
+      wb_irq.err   <= '0';
       -- trigger IRQ using CSR.MIE bit layout --
+      nmi_ring      <= '0';
       msi_ring      <= '0';
       mei_ring      <= '0';
       soc_firq_ring <= (others => '0');
       if ((wb_irq.cyc and wb_irq.stb and wb_irq.we and and_all_f(wb_irq.sel)) = '1') then
+        nmi_ring         <= wb_irq.wdata(00); -- non-maskable interrupt
         msi_ring         <= wb_irq.wdata(03); -- machine software interrupt
         mei_ring         <= wb_irq.wdata(11); -- machine software interrupt
         --
