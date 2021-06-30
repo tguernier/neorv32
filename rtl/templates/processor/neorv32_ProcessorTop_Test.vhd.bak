@@ -70,7 +70,7 @@ begin
   generic map (
     -- General --
     CLOCK_FREQUENCY              => 50000000,   -- clock frequency of clk_i in Hz
-    INT_BOOTLOADER_EN                => true,        -- implement processor-internal bootloader?
+    BOOTLOADER_EN                => true,        -- implement processor-internal bootloader?
     USER_CODE                    => x"00000000", -- custom user code
     HW_THREAD_ID                 => 0,           -- hardware thread id (hartid)
     -- On-Chip Debugger (OCD) --
