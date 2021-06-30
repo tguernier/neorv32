@@ -4,7 +4,7 @@ The most recent version of the **NEORV32** project can be found at the top of th
 "Stable releases" are linked and highlighted :rocket:.
 The latest release is [![release](https://img.shields.io/github/v/release/stnolting/neorv32)](https://github.com/stnolting/neorv32/releases).
 A list of all releases can be found [here](https://github.com/stnolting/neorv32/releases). The most recent version of the *NEORV32 data sheet*
-can be found [here](https://raw.githubusercontent.com/stnolting/neorv32/master/docs/NEORV32.pdf) (pdf).
+can be found [online at GitHub-pages](https://stnolting.github.io/neorv32).
 
 :information_source: To see a list of all commits between releases run `git log RELEASE_A..RELEASE_B` (example: `v1.4.7.0..v1.4.8.0`).
 
@@ -17,13 +17,43 @@ defined by the `hw_version_c` constant in the main VHDL package file [`rtl/core/
 
 * :bug: = bug-fix
 * :sparkles: = new feature
-* :warning: = major change / important note
+* :warning: = (major) change that might impact compatibility with previous versions
 * :lock: = security issue
 * :rocket: = release
 
 
 | Date (*dd.mm.yyyy*) | Version | Comment |
 |:----------:|:-------:|:--------|
+| 23.06.2021 | [**:rocket:1.5.7**](https://github.com/stnolting/neorv32/releases/tag/v1.5.7) | **New release** |
+| 21.06.2021 | 1.5.6.14 | :bug: fixed bug in debugger "park loop": `fence.i` instruction was missing before executing the DM's program buffer - this caused execution of outdated instructions from the program buffer if the **instruction cache** is implemented |
+| 21.06.2021 | 1.5.6.13 | removed `TINY_SHIFT_EN` generic; clean-up of CPU co-processor system: removed "dummy co-processor" for CSR read access, moved CPU shifter core into new co-processor; simplified default (bit-serial) shifter logic (single bit-shifts only) and multi-cycl instructions decode logic |
+| 18.06.2021 | 1.5.6.12 | clean-up of CPU co-processor system (removed unused co-processor slots 4,5,6,7) |
+| 15.06.2021 | 1.5.6.11 | made bootloader more configuration-independent: bootloader now only uses the first 512 bytes of internal/external DMEM for runtime data - hence, the DMEM size is not further relevant as long as it greater than or equal to 512 bytes |
+| 14.06.2021 | 1.5.6.10 | :sparkles: physical size of bootloader ROM (BOOTROM) is atutomatically determined during synthesis based on the size of the initialization image, max physical size is 32kB; simplified BOOTROM access check logic; added size check when using IMEM as ROM (check if application image fits); simplified linker script: _logical_ instruction address space 2GB now, no need to adapt this to hardware configuration, hardware checks if application fits into _physical_ memory size (which configured via generics) |
+| 13.06.2021 | 1.5.6.9 | :warning: reworked boot configuration: removed `MEM_INT_IMEM_ROM` and `BOOTLOADER_EN` generics, replaced by single `INT_BOOTLOADER_EN` generic (type boolean): _true_ = implement processor-internal (default) bootloader, implement processor-internal IMEM (if implemented) as RAM; _false_ = boot from processor-internal IMEM implemented (if enabled) as pre-intialized ROM; reworked IMEM, DMEM and BOOTROM memory architecture; reworked image generator and generated application image files (now using unconstrained array as init images + unified array/memory types) |
+| 12.06.2021 | 1.5.6.8 | :bug: fixed bug in instruction cache (cache controller might have missed resync/"clear-and-reload" requests from `fence.i` instructions); mino project/repo clean-ups |
+| 08.06.2021 | 1.5.6.7 | clean-up of Wishbone interface module (dead code removal); added new package constant `wb_rx_buffer_c` to configure SYNC (default) or ASYNC Wishbone RX path (allows trade-off between performance/latency and timing closure) |
+| 06.06.2021 | 1.5.6.6 | :bug: fixed bug in PWM base address configuration; :warning: removed user-access HPM counter access via `hpmcounter3[h]`:`hpmcounter3[h]` CSRs, hardwaired according `mcounteren` bits to zero: HPM can only be used in machine mode; reworded 64-bit counters (`cycle`, `instret`, `hpmcounter` + `mtime`) overflow logic: now using dedicated CARRY chain instead of overflow detector (can improve timing); |
+| 05.06.2021 | 1.5.6.5 | removed debug mode's `stepie` flag (used to allow interrupts during single-stepping) as the debugger can emulate interrupts | 
+| 04.06.2021 | 1.5.6.4 | :warning: removed `IO_PWM_EN` generic, replaced by `IO_PWM_NUM_CH` generic - PWM ontroller now supports implementation of up to 60 channels via `IO_PWM_NUM_CH` (`IO_PWM_NUM_CH` = 0 will omit the PWM controller); :bug: fixed minor bug in `minstreth` counter logic |
+| 04.06.2021 | 1.5.6.3 | :warning: increased processor-internal IO size from 256 bytes to 512 bytes; relocated base adress of CFS |
+| 03.06.2021 | 1.5.6.2 | :warning: The `B` ISA extension (bit manipulation) has been (temporarily) removed from the project. See [B ISA Extension](https://github.com/stnolting/neorv32/projects/7) project board. |
+| 03.06.2021 | 1.5.6.1 | CPU/HPM counter size configuration (`CPU_CNT_WIDTH` and `HPM_CNT_WIDTH` generics) can now be 0-bit (no counters implemented at all) to 64-bit (full-scale / RISC-V standard) wide |
+| 01.06.2021 | [**:rocket:1.5.6.0**](https://github.com/stnolting/neorv32/releases/tag/v1.5.6.0) | **New release** |
+| 01.06.2021 | 1.5.5.13 | :warning: fixed project's endianness inconsistency (issue [#50](https://github.com/stnolting/neorv32/issues/50)) - CPU and processor are **little-endian**; changed image generator (`sw/image_gen`) and bootloader to generate/use little-endian executables; external memory interface is little-endian by default; removed `mstatus.ube` bit (reads as zero now); removed `mstatush` CSR |
+| 31.05.2021 | 1.5.5.12 | `mret` instruction now clears `mstatus.mpp` (according to _new_ RISC-V privileged specs.) |
+| 31.05.2021 | 1.5.5.11 | :warning: `mtval` CSR is now read-only; a write access will raise an illegal instruction exception |
+| 30.05.2021 | 1.5.5.10 | :bug: fixed bug in processor's reset system (system reset stuck at `0` if on-chip debugger not implemented); reworked processor's reset generator system; VHDL code clean-up; reworked SoC's bus infrastructure (now using array of records for module bus response) |
+| 28.05.2021 | 1.5.5.9 | integrated DBMEM (debug memory) component into DM (debug module); removing now-obsolete `neorv32_debug_dbmem.vhd` component |
+| 22.05.2021 | 1.5.5.8 | :sparkles: **on-chip debugger (OCD)**: added debug module (`DM`) component; **OCD is operational now** (but still experimental) |
+| 22.05.2021 | 1.5.5.7 | :bug: fixed bug in internal memory monitoring: if accessing an unused address which is not re-directed to the external bus interface (because WISHBONE module is disabled) caused the CPU to stall since that bus access was not correctly monitored and aborted by the BUS_KEEPER |
+| 21.05.2021 | 1.5.5.6 | **on-chip debugger**: added debug transport module (`DTM`) component |
+| 20.05.2021 | 1.5.5.5 | added system time output `mtime_o` (64-bit) driven by processor-internal _MTIME_ unit (idea [#29](https://github.com/stnolting/neorv32/discussions/29))
+| 20.05.2021 | 1.5.5.4 | **on-chip debugger**: added debug memory (`DBMEM`) component |
+| 20.05.2021 | 1.5.5.3 | added flag (SYSINFO.FEATURES) to allow software to discover if on-chip debugger is implemented (`SYSINFO_FEATURES_OCD`); added documentation [https://stnolting.github.io/neorv32/#_on_chip_debugger_ocd](https://stnolting.github.io/neorv32/#_on_chip_debugger_ocd) |
+| 19.05.2021 | 1.5.5.2 | :sparkles: added **RISC-V CPU Debug Mode**, compatible to [RISC-V debug spec](https://github.com/riscv/riscv-debug-spec); new CSRs: `dcsr`, `dpc`, `dscratch`; new instructions: `dret`; :warning: debug mode is still **work-in-progress* and not operational yet! updated documentation CI [#26](https://github.com/stnolting/neorv32/pull/26), contributed by [umarcor](https://github.com/umarcor) :+1:; `fence.i` will not longer trap if executed but not implemented (`CPU_EXTENSION_RISCV_Zifencei` = false) |
+| 13.05.2021 | 1.5.5.1 | added [`UPduino_v3`](https://github.com/stnolting/neorv32/tree/master/boards/UPduino_v3) example setup; renamed signal in watchdog module (`rtl/core/neorv32_wdt.vhd`) - collision with reserved keyword in vhdl-2008 (fixing issue [#24](https://github.com/stnolting/neorv32/issues/24)) |
+| 10.05.2021 | [**:rocket:1.5.5.0**](https://github.com/stnolting/neorv32/releases/tag/v1.5.5.0) | **New release** |
 | 10.05.2021 | 1.5.4.12 | :warning: `mip` CSR is now read-only (pending IRQs can be cleared by disabling (and re-enabling) the according `mie` bit), writing to `mip` will raise an illegal instruction exception; :sparkles: added non-maskable interrupt (NMI), top entity port `nm_irq_i`; added new NMI to NEORV32 runtime environment |
 | 09.05.2021 | 1.5.4.11 | added new flags to `mzext` CSR: *CSR_MZEXT_PMP* (set if at least 1 PMP region is implemented at all), *CSR_MZEXT_HPM* (set if at least 1 HPM counter is implemented) |
 | 03.05.2021 | 1.5.4.10 | minor code clean-ups; moved FIRQ synchronization registers to top, removed sync FFs for processor-internal sources; |

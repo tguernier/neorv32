@@ -43,6 +43,11 @@
 #ifndef neorv32_h
 #define neorv32_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 // Standard libraries
 #include <stdint.h>
 #include <inttypes.h>
@@ -53,16 +58,15 @@
  * Available CPU Control and Status Registers (CSRs)
  **************************************************************************/
 enum NEORV32_CSR_enum {
-  CSR_FFLAGS         = 0x001, /**< 0x001 - fflags     (r/w): Floating-point accrued exception flags */
-  CSR_FRM            = 0x002, /**< 0x002 - frm        (r/w): Floating-point dynamic rounding mode */
-  CSR_FCSR           = 0x003, /**< 0x003 - fcsr       (r/w): Floating-point control/staturs register (frm + fflags) */
+  CSR_FFLAGS         = 0x001, /**< 0x001 - fflags (r/w): Floating-point accrued exception flags */
+  CSR_FRM            = 0x002, /**< 0x002 - frm    (r/w): Floating-point dynamic rounding mode */
+  CSR_FCSR           = 0x003, /**< 0x003 - fcsr   (r/w): Floating-point control/staturs register (frm + fflags) */
 
   CSR_MSTATUS        = 0x300, /**< 0x300 - mstatus    (r/w): Machine status register */
   CSR_MISA           = 0x301, /**< 0x301 - misa       (r/-): CPU ISA and extensions (read-only in NEORV32) */
   CSR_MIE            = 0x304, /**< 0x304 - mie        (r/w): Machine interrupt-enable register */
   CSR_MTVEC          = 0x305, /**< 0x305 - mtvec      (r/w): Machine trap-handler base address (for ALL traps) */
   CSR_MCOUNTEREN     = 0x306, /**< 0x305 - mcounteren (r/w): Machine counter enable register (controls access rights from U-mode) */
-  CSR_MSTATUSH       = 0x310, /**< 0x310 - mstatush   (r/-): Machine status register - high word */
 
   CSR_MCOUNTINHIBIT  = 0x320, /**< 0x320 - mcountinhibit (r/w): Machine counter-inhibit register */
 
@@ -99,7 +103,7 @@ enum NEORV32_CSR_enum {
   CSR_MSCRATCH       = 0x340, /**< 0x340 - mscratch (r/w): Machine scratch register */
   CSR_MEPC           = 0x341, /**< 0x341 - mepc     (r/w): Machine exception program counter */
   CSR_MCAUSE         = 0x342, /**< 0x342 - mcause   (r/w): Machine trap cause */
-  CSR_MTVAL          = 0x343, /**< 0x343 - mtval    (r/w): Machine bad address or instruction */
+  CSR_MTVAL          = 0x343, /**< 0x343 - mtval    (r/-): Machine bad address or instruction */
   CSR_MIP            = 0x344, /**< 0x344 - mip      (r/-): Machine interrupt pending register */
 
   CSR_PMPCFG0        = 0x3a0, /**< 0x3a0 - pmpcfg0  (r/w): Physical memory protection configuration register 0  */
@@ -184,8 +188,8 @@ enum NEORV32_CSR_enum {
   CSR_PMPADDR62      = 0x3ee, /**< 0x3ee - pmpaddr62 (r/w): Physical memory protection address register 62 */
   CSR_PMPADDR63      = 0x3ef, /**< 0x3ef - pmpaddr63 (r/w): Physical memory protection address register 63 */
 
-  CSR_MCYCLE         = 0xb00, /**< 0xb00 - mcycle        (r/w): Machine cycle counter low word */
-  CSR_MINSTRET       = 0xb02, /**< 0xb02 - minstret      (r/w): Machine instructions-retired counter low word */
+  CSR_MCYCLE         = 0xb00, /**< 0xb00 - mcycle   (r/w): Machine cycle counter low word */
+  CSR_MINSTRET       = 0xb02, /**< 0xb02 - minstret (r/w): Machine instructions-retired counter low word */
 
   CSR_MHPMCOUNTER3   = 0xb03, /**< 0xb03 - mhpmcounter3  (r/w): Machine hardware performance monitor 3  counter low word */
   CSR_MHPMCOUNTER4   = 0xb04, /**< 0xb04 - mhpmcounter4  (r/w): Machine hardware performance monitor 4  counter low word */
@@ -217,8 +221,8 @@ enum NEORV32_CSR_enum {
   CSR_MHPMCOUNTER30  = 0xb1e, /**< 0xb1e - mhpmcounter30 (r/w): Machine hardware performance monitor 30 counter low word */
   CSR_MHPMCOUNTER31  = 0xb1f, /**< 0xb1f - mhpmcounter31 (r/w): Machine hardware performance monitor 31 counter low word */
 
-  CSR_MCYCLEH        = 0xb80, /**< 0xb80 - mcycleh        (r/w): Machine cycle counter high word */
-  CSR_MINSTRETH      = 0xb82, /**< 0xb82 - minstreth      (r/w): Machine instructions-retired counter high word */
+  CSR_MCYCLEH        = 0xb80, /**< 0xb80 - mcycleh   (r/w): Machine cycle counter high word */
+  CSR_MINSTRETH      = 0xb82, /**< 0xb82 - minstreth (r/w): Machine instructions-retired counter high word */
 
   CSR_MHPMCOUNTER3H  = 0xb83, /**< 0xb83 - mhpmcounter3h  (r/w): Machine hardware performance monitor 3  counter high word */
   CSR_MHPMCOUNTER4H  = 0xb84, /**< 0xb84 - mhpmcounter4h  (r/w): Machine hardware performance monitor 4  counter high word */
@@ -250,73 +254,13 @@ enum NEORV32_CSR_enum {
   CSR_MHPMCOUNTER30H = 0xb9e, /**< 0xb9e - mhpmcounter30h (r/w): Machine hardware performance monitor 30 counter high word */
   CSR_MHPMCOUNTER31H = 0xb9f, /**< 0xb9f - mhpmcounter31h (r/w): Machine hardware performance monitor 31 counter high word */
 
-  CSR_CYCLE          = 0xc00, /**< 0xc00 - cycle        (r/-): Cycle counter low word (from MCYCLE) */
-  CSR_TIME           = 0xc01, /**< 0xc01 - time         (r/-): Timer low word (from MTIME.TIME_LO) */
-  CSR_INSTRET        = 0xc02, /**< 0xc02 - instret      (r/-): Instructions-retired counter low word (from MINSTRET) */
+  CSR_CYCLE          = 0xc00, /**< 0xc00 - cycle   (r/-): Cycle counter low word (from MCYCLE) */
+  CSR_TIME           = 0xc01, /**< 0xc01 - time    (r/-): Timer low word (from MTIME.TIME_LO) */
+  CSR_INSTRET        = 0xc02, /**< 0xc02 - instret (r/-): Instructions-retired counter low word (from MINSTRET) */
 
-  CSR_HPMCOUNTER3    = 0xc03, /**< 0xc03 - hpmcounter3  (r/w): Hardware performance monitor 3  counter low word */
-  CSR_HPMCOUNTER4    = 0xc04, /**< 0xc04 - hpmcounter4  (r/w): Hardware performance monitor 4  counter low word */
-  CSR_HPMCOUNTER5    = 0xc05, /**< 0xc05 - hpmcounter5  (r/w): Hardware performance monitor 5  counter low word */
-  CSR_HPMCOUNTER6    = 0xc06, /**< 0xc06 - hpmcounter6  (r/w): Hardware performance monitor 6  counter low word */
-  CSR_HPMCOUNTER7    = 0xc07, /**< 0xc07 - hpmcounter7  (r/w): Hardware performance monitor 7  counter low word */
-  CSR_HPMCOUNTER8    = 0xc08, /**< 0xc08 - hpmcounter8  (r/w): Hardware performance monitor 8  counter low word */
-  CSR_HPMCOUNTER9    = 0xc09, /**< 0xc09 - hpmcounter9  (r/w): Hardware performance monitor 9  counter low word */
-  CSR_HPMCOUNTER10   = 0xc0a, /**< 0xc0a - hpmcounter10 (r/w): Hardware performance monitor 10 counter low word */
-  CSR_HPMCOUNTER11   = 0xc0b, /**< 0xc0b - hpmcounter11 (r/w): Hardware performance monitor 11 counter low word */
-  CSR_HPMCOUNTER12   = 0xc0c, /**< 0xc0c - hpmcounter12 (r/w): Hardware performance monitor 12 counter low word */
-  CSR_HPMCOUNTER13   = 0xc0d, /**< 0xc0d - hpmcounter13 (r/w): Hardware performance monitor 13 counter low word */
-  CSR_HPMCOUNTER14   = 0xc0e, /**< 0xc0e - hpmcounter14 (r/w): Hardware performance monitor 14 counter low word */
-  CSR_HPMCOUNTER15   = 0xc0f, /**< 0xc0f - hpmcounter15 (r/w): Hardware performance monitor 15 counter low word */
-  CSR_HPMCOUNTER16   = 0xc10, /**< 0xc10 - hpmcounter16 (r/w): Hardware performance monitor 16 counter low word */
-  CSR_HPMCOUNTER17   = 0xc11, /**< 0xc11 - hpmcounter17 (r/w): Hardware performance monitor 17 counter low word */
-  CSR_HPMCOUNTER18   = 0xc12, /**< 0xc12 - hpmcounter18 (r/w): Hardware performance monitor 18 counter low word */
-  CSR_HPMCOUNTER19   = 0xc13, /**< 0xc13 - hpmcounter19 (r/w): Hardware performance monitor 19 counter low word */
-  CSR_HPMCOUNTER20   = 0xc14, /**< 0xc14 - hpmcounter20 (r/w): Hardware performance monitor 20 counter low word */
-  CSR_HPMCOUNTER21   = 0xc15, /**< 0xc15 - hpmcounter21 (r/w): Hardware performance monitor 21 counter low word */
-  CSR_HPMCOUNTER22   = 0xc16, /**< 0xc16 - hpmcounter22 (r/w): Hardware performance monitor 22 counter low word */
-  CSR_HPMCOUNTER23   = 0xc17, /**< 0xc17 - hpmcounter23 (r/w): Hardware performance monitor 23 counter low word */
-  CSR_HPMCOUNTER24   = 0xc18, /**< 0xc18 - hpmcounter24 (r/w): Hardware performance monitor 24 counter low word */
-  CSR_HPMCOUNTER25   = 0xc19, /**< 0xc19 - hpmcounter25 (r/w): Hardware performance monitor 25 counter low word */
-  CSR_HPMCOUNTER26   = 0xc1a, /**< 0xc1a - hpmcounter26 (r/w): Hardware performance monitor 26 counter low word */
-  CSR_HPMCOUNTER27   = 0xc1b, /**< 0xc1b - hpmcounter27 (r/w): Hardware performance monitor 27 counter low word */
-  CSR_HPMCOUNTER28   = 0xc1c, /**< 0xc1c - hpmcounter28 (r/w): Hardware performance monitor 28 counter low word */
-  CSR_HPMCOUNTER29   = 0xc1d, /**< 0xc1d - hpmcounter29 (r/w): Hardware performance monitor 29 counter low word */
-  CSR_HPMCOUNTER30   = 0xc1e, /**< 0xc1e - hpmcounter30 (r/w): Hardware performance monitor 30 counter low word */
-  CSR_HPMCOUNTER31   = 0xc1f, /**< 0xc1f - hpmcounter31 (r/w): Hardware performance monitor 31 counter low word */
-
-  CSR_CYCLEH         = 0xc80, /**< 0xc80 - cycleh        (r/-): Cycle counter high word (from MCYCLEH) */
-  CSR_TIMEH          = 0xc81, /**< 0xc81 - timeh         (r/-): Timer high word (from MTIME.TIME_HI) */
-  CSR_INSTRETH       = 0xc82, /**< 0xc82 - instreth      (r/-): Instructions-retired counter high word (from MINSTRETH) */
-
-  CSR_HPMCOUNTER3H   = 0xc83, /**< 0xc83 - hpmcounter3h  (r/w): Hardware performance monitor 3  counter high word */
-  CSR_HPMCOUNTER4H   = 0xc84, /**< 0xc84 - hpmcounter4h  (r/w): Hardware performance monitor 4  counter high word */
-  CSR_HPMCOUNTER5H   = 0xc85, /**< 0xc85 - hpmcounter5h  (r/w): Hardware performance monitor 5  counter high word */
-  CSR_HPMCOUNTER6H   = 0xc86, /**< 0xc86 - hpmcounter6h  (r/w): Hardware performance monitor 6  counter high word */
-  CSR_HPMCOUNTER7H   = 0xc87, /**< 0xc87 - hpmcounter7h  (r/w): Hardware performance monitor 7  counter high word */
-  CSR_HPMCOUNTER8H   = 0xc88, /**< 0xc88 - hpmcounter8h  (r/w): Hardware performance monitor 8  counter high word */
-  CSR_HPMCOUNTER9H   = 0xc89, /**< 0xc89 - hpmcounter9h  (r/w): Hardware performance monitor 9  counter high word */
-  CSR_HPMCOUNTER10H  = 0xc8a, /**< 0xc8a - hpmcounter10h (r/w): Hardware performance monitor 10 counter high word */
-  CSR_HPMCOUNTER11H  = 0xc8b, /**< 0xc8b - hpmcounter11h (r/w): Hardware performance monitor 11 counter high word */
-  CSR_HPMCOUNTER12H  = 0xc8c, /**< 0xc8c - hpmcounter12h (r/w): Hardware performance monitor 12 counter high word */
-  CSR_HPMCOUNTER13H  = 0xc8d, /**< 0xc8d - hpmcounter13h (r/w): Hardware performance monitor 13 counter high word */
-  CSR_HPMCOUNTER14H  = 0xc8e, /**< 0xc8e - hpmcounter14h (r/w): Hardware performance monitor 14 counter high word */
-  CSR_HPMCOUNTER15H  = 0xc8f, /**< 0xc8f - hpmcounter15h (r/w): Hardware performance monitor 15 counter high word */
-  CSR_HPMCOUNTER16H  = 0xc90, /**< 0xc90 - hpmcounter16h (r/w): Hardware performance monitor 16 counter high word */
-  CSR_HPMCOUNTER17H  = 0xc91, /**< 0xc91 - hpmcounter17h (r/w): Hardware performance monitor 17 counter high word */
-  CSR_HPMCOUNTER18H  = 0xc92, /**< 0xc92 - hpmcounter18h (r/w): Hardware performance monitor 18 counter high word */
-  CSR_HPMCOUNTER19H  = 0xc93, /**< 0xc93 - hpmcounter19h (r/w): Hardware performance monitor 19 counter high word */
-  CSR_HPMCOUNTER20H  = 0xc94, /**< 0xc94 - hpmcounter20h (r/w): Hardware performance monitor 20 counter high word */
-  CSR_HPMCOUNTER21H  = 0xc95, /**< 0xc95 - hpmcounter21h (r/w): Hardware performance monitor 21 counter high word */
-  CSR_HPMCOUNTER22H  = 0xc96, /**< 0xc96 - hpmcounter22h (r/w): Hardware performance monitor 22 counter high word */
-  CSR_HPMCOUNTER23H  = 0xc97, /**< 0xc97 - hpmcounter23h (r/w): Hardware performance monitor 23 counter high word */
-  CSR_HPMCOUNTER24H  = 0xc98, /**< 0xc98 - hpmcounter24h (r/w): Hardware performance monitor 24 counter high word */
-  CSR_HPMCOUNTER25H  = 0xc99, /**< 0xc99 - hpmcounter25h (r/w): Hardware performance monitor 25 counter high word */
-  CSR_HPMCOUNTER26H  = 0xc9a, /**< 0xc9a - hpmcounter26h (r/w): Hardware performance monitor 26 counter high word */
-  CSR_HPMCOUNTER27H  = 0xc9b, /**< 0xc9b - hpmcounter27h (r/w): Hardware performance monitor 27 counter high word */
-  CSR_HPMCOUNTER28H  = 0xc9c, /**< 0xc9c - hpmcounter28h (r/w): Hardware performance monitor 28 counter high word */
-  CSR_HPMCOUNTER29H  = 0xc9d, /**< 0xc9d - hpmcounter29h (r/w): Hardware performance monitor 29 counter high word */
-  CSR_HPMCOUNTER30H  = 0xc9e, /**< 0xc9e - hpmcounter30h (r/w): Hardware performance monitor 30 counter high word */
-  CSR_HPMCOUNTER31H  = 0xc9f, /**< 0xc9f - hpmcounter31h (r/w): Hardware performance monitor 31 counter high word */
+  CSR_CYCLEH         = 0xc80, /**< 0xc80 - cycleh   (r/-): Cycle counter high word (from MCYCLEH) */
+  CSR_TIMEH          = 0xc81, /**< 0xc81 - timeh    (r/-): Timer high word (from MTIME.TIME_HI) */
+  CSR_INSTRETH       = 0xc82, /**< 0xc82 - instreth (r/-): Instructions-retired counter high word (from MINSTRETH) */
 
   CSR_MVENDORID      = 0xf11, /**< 0xf11 - mvendorid (r/-): Vendor ID */
   CSR_MARCHID        = 0xf12, /**< 0xf12 - marchid   (r/-): Architecture ID */
@@ -332,7 +276,6 @@ enum NEORV32_CSR_enum {
  **************************************************************************/
 enum NEORV32_CSR_MSTATUS_enum {
   CSR_MSTATUS_MIE   =  3, /**< CPU mstatus CSR  (3): MIE - Machine interrupt enable bit (r/w) */
-  CSR_MSTATUS_UBE   =  6, /**< CPU mstatus CSR  (6): UBE - User-mode endianness (little-endian=0, big-endian=1) (r/-) */
   CSR_MSTATUS_MPIE  =  7, /**< CPU mstatus CSR  (7): MPIE - Machine previous interrupt enable bit (r/w) */
   CSR_MSTATUS_MPP_L = 11, /**< CPU mstatus CSR (11): MPP_L - Machine previous privilege mode bit low (r/w) */
   CSR_MSTATUS_MPP_H = 12  /**< CPU mstatus CSR (12): MPP_H - Machine previous privilege mode bit high (r/w) */
@@ -340,50 +283,12 @@ enum NEORV32_CSR_MSTATUS_enum {
 
 
 /**********************************************************************//**
- * CPU <b>mstatush</b> CSR (r/-): Machine status - high word (RISC-V spec.)
- **************************************************************************/
-enum NEORV32_CSR_MSTATUSH_enum {
-  CSR_MSTATUSH_MBE = 5 /**< CPU mstatush CSR (5): MBE - Machine-mode endianness (little-endian=0, big-endian=1) (r/-) */
-};
-
-
-/**********************************************************************//**
  * CPU <b>mcounteren</b> CSR (r/w): Machine counter enable (RISC-V spec.)
  **************************************************************************/
 enum NEORV32_CSR_MCOUNTEREN_enum {
-  CSR_MCOUNTEREN_CY    = 0,  /**< CPU mcounteren CSR (0): CY - Allow access to cycle[h]   CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_TM    = 1,  /**< CPU mcounteren CSR (1): TM - Allow access to time[h]    CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_IR    = 2,  /**< CPU mcounteren CSR (2): IR - Allow access to instret[h] CSRs from U-mode when set (r/w) */
-
-  CSR_MCOUNTEREN_HPM3  = 3,  /**< CPU mcounteren CSR (3):  HPM3  - Allow access to hpmcnt3[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM4  = 4,  /**< CPU mcounteren CSR (4):  HPM4  - Allow access to hpmcnt4[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM5  = 5,  /**< CPU mcounteren CSR (5):  HPM5  - Allow access to hpmcnt5[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM6  = 6,  /**< CPU mcounteren CSR (6):  HPM6  - Allow access to hpmcnt6[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM7  = 7,  /**< CPU mcounteren CSR (7):  HPM7  - Allow access to hpmcnt7[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM8  = 8,  /**< CPU mcounteren CSR (8):  HPM8  - Allow access to hpmcnt8[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM9  = 9,  /**< CPU mcounteren CSR (9):  HPM9  - Allow access to hpmcnt9[h]  CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM10 = 10, /**< CPU mcounteren CSR (10): HPM10 - Allow access to hpmcnt10[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM11 = 11, /**< CPU mcounteren CSR (11): HPM11 - Allow access to hpmcnt11[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM12 = 12, /**< CPU mcounteren CSR (12): HPM12 - Allow access to hpmcnt12[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM13 = 13, /**< CPU mcounteren CSR (13): HPM13 - Allow access to hpmcnt13[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM14 = 14, /**< CPU mcounteren CSR (14): HPM14 - Allow access to hpmcnt14[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM15 = 15, /**< CPU mcounteren CSR (15): HPM15 - Allow access to hpmcnt15[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM16 = 16, /**< CPU mcounteren CSR (16): HPM16 - Allow access to hpmcnt16[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM17 = 17, /**< CPU mcounteren CSR (17): HPM17 - Allow access to hpmcnt17[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM18 = 18, /**< CPU mcounteren CSR (18): HPM18 - Allow access to hpmcnt18[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM19 = 19, /**< CPU mcounteren CSR (19): HPM19 - Allow access to hpmcnt19[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM20 = 20, /**< CPU mcounteren CSR (20): HPM20 - Allow access to hpmcnt20[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM21 = 21, /**< CPU mcounteren CSR (21): HPM21 - Allow access to hpmcnt21[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM22 = 22, /**< CPU mcounteren CSR (22): HPM22 - Allow access to hpmcnt22[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM23 = 23, /**< CPU mcounteren CSR (23): HPM23 - Allow access to hpmcnt23[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM24 = 24, /**< CPU mcounteren CSR (24): HPM24 - Allow access to hpmcnt24[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM25 = 25, /**< CPU mcounteren CSR (25): HPM25 - Allow access to hpmcnt25[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM26 = 26, /**< CPU mcounteren CSR (26): HPM26 - Allow access to hpmcnt26[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM27 = 27, /**< CPU mcounteren CSR (27): HPM27 - Allow access to hpmcnt27[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM28 = 28, /**< CPU mcounteren CSR (28): HPM28 - Allow access to hpmcnt28[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM29 = 29, /**< CPU mcounteren CSR (29): HPM29 - Allow access to hpmcnt29[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM30 = 30, /**< CPU mcounteren CSR (30): HPM30 - Allow access to hpmcnt30[h] CSRs from U-mode when set (r/w) */
-  CSR_MCOUNTEREN_HPM31 = 31  /**< CPU mcounteren CSR (31): HPM31 - Allow access to hpmcnt31[h] CSRs from U-mode when set (r/w) */
+  CSR_MCOUNTEREN_CY    = 0, /**< CPU mcounteren CSR (0): CY - Allow access to cycle[h]   CSRs from U-mode when set (r/w) */
+  CSR_MCOUNTEREN_TM    = 1, /**< CPU mcounteren CSR (1): TM - Allow access to time[h]    CSRs from U-mode when set (r/w) */
+  CSR_MCOUNTEREN_IR    = 2  /**< CPU mcounteren CSR (2): IR - Allow access to instret[h] CSRs from U-mode when set (r/w) */
 };
 
 
@@ -469,7 +374,6 @@ enum NEORV32_CSR_MIP_enum {
   CSR_MIP_FIRQ5P  = 21, /**< CPU mip CSR (21): FIRQ5P - Fast interrupt channel 5 pending (r/-) */
   CSR_MIP_FIRQ6P  = 22, /**< CPU mip CSR (22): FIRQ6P - Fast interrupt channel 6 pending (r/-) */
   CSR_MIP_FIRQ7P  = 23, /**< CPU mip CSR (23): FIRQ7P - Fast interrupt channel 7 pending (r/-) */
-
   CSR_MIP_FIRQ8P  = 24, /**< CPU mip CSR (24): FIRQ8P - Fast interrupt channel 8 pending (r/-) */
   CSR_MIP_FIRQ9P  = 25, /**< CPU mip CSR (25): FIRQ9P - Fast interrupt channel 9 pending (r/-) */
   CSR_MIP_FIRQ10P = 26, /**< CPU mip CSR (26): FIRQ10P - Fast interrupt channel 10 pending (r/-) */
@@ -485,18 +389,18 @@ enum NEORV32_CSR_MIP_enum {
  * CPU <b>misa</b> CSR (r/-): Machine instruction set extensions (RISC-V spec.)
  **************************************************************************/
 enum NEORV32_CSR_MISA_enum {
-  CSR_MISA_A_EXT      =  0, /**< CPU misa CSR  (0): A: Atomic instructions CPU extension available (r/-)*/
-  CSR_MISA_B_EXT      =  1, /**< CPU misa CSR  (1): B: Bit manipulation CPU extension available (r/-)*/
-  CSR_MISA_C_EXT      =  2, /**< CPU misa CSR  (2): C: Compressed instructions CPU extension available (r/-)*/
-  CSR_MISA_D_EXT      =  3, /**< CPU misa CSR  (3): D: Double-precision floating-point extension available (r/-)*/
-  CSR_MISA_E_EXT      =  4, /**< CPU misa CSR  (4): E: Embedded CPU extension available (r/-) */
-  CSR_MISA_F_EXT      =  5, /**< CPU misa CSR  (5): F: Single-precision floating-point extension available (r/-)*/
-  CSR_MISA_I_EXT      =  8, /**< CPU misa CSR  (8): I: Base integer ISA CPU extension available (r/-) */
-  CSR_MISA_M_EXT      = 12, /**< CPU misa CSR (12): M: Multiplier/divider CPU extension available (r/-)*/
-  CSR_MISA_U_EXT      = 20, /**< CPU misa CSR (20): U: User mode CPU extension available (r/-)*/
-  CSR_MISA_X_EXT      = 23, /**< CPU misa CSR (23): X: Non-standard CPU extension available (r/-) */
-  CSR_MISA_MXL_LO_EXT = 30, /**< CPU misa CSR (30): MXL.lo: CPU data width (r/-) */
-  CSR_MISA_MXL_HI_EXT = 31  /**< CPU misa CSR (31): MXL.Hi: CPU data width (r/-) */
+  CSR_MISA_A      =  0, /**< CPU misa CSR  (0): A: Atomic instructions CPU extension available (r/-)*/
+  CSR_MISA_B      =  1, /**< CPU misa CSR  (1): B: Bit manipulation CPU extension available (r/-)*/
+  CSR_MISA_C      =  2, /**< CPU misa CSR  (2): C: Compressed instructions CPU extension available (r/-)*/
+  CSR_MISA_D      =  3, /**< CPU misa CSR  (3): D: Double-precision floating-point extension available (r/-)*/
+  CSR_MISA_E      =  4, /**< CPU misa CSR  (4): E: Embedded CPU extension available (r/-) */
+  CSR_MISA_F      =  5, /**< CPU misa CSR  (5): F: Single-precision floating-point extension available (r/-)*/
+  CSR_MISA_I      =  8, /**< CPU misa CSR  (8): I: Base integer ISA CPU extension available (r/-) */
+  CSR_MISA_M      = 12, /**< CPU misa CSR (12): M: Multiplier/divider CPU extension available (r/-)*/
+  CSR_MISA_U      = 20, /**< CPU misa CSR (20): U: User mode CPU extension available (r/-)*/
+  CSR_MISA_X      = 23, /**< CPU misa CSR (23): X: Non-standard CPU extension available (r/-) */
+  CSR_MISA_MXL_LO = 30, /**< CPU misa CSR (30): MXL.lo: CPU data width (r/-) */
+  CSR_MISA_MXL_HI = 31  /**< CPU misa CSR (31): MXL.Hi: CPU data width (r/-) */
 };
 
 
@@ -504,16 +408,15 @@ enum NEORV32_CSR_MISA_enum {
  * CPU <b>mzext</b> custom CSR (r/-): Implemented Z* CPU extensions
  **************************************************************************/
 enum NEORV32_CSR_MZEXT_enum {
-  CSR_MZEXT_ZICSR    = 0, /**< CPU mzext CSR (0): Zicsr extension (I sub-extension) available when set (r/-) */
-  CSR_MZEXT_ZIFENCEI = 1, /**< CPU mzext CSR (1): Zifencei extension (I sub-extension) available when set (r/-) */
-  CSR_MZEXT_ZBB      = 2, /**< CPU mzext CSR (2): Zbb extension (B sub-extension) available when set (r/-) */
-  CSR_MZEXT_ZBS      = 3, /**< CPU mzext CSR (3): Zbs extension (B sub-extension) available when set (r/-) */
-  CSR_MZEXT_ZBA      = 4, /**< CPU mzext CSR (4): Zba extension (B sub-extension) available when set (r/-) */
-  CSR_MZEXT_ZFINX    = 5, /**< CPU mzext CSR (5): Zfinx extension (F sub-/alternative-extension) available when set (r/-) */
-  CSR_MZEXT_ZXSCNT   = 6, /**< CPU mzext CSR (6): Custom extension - Small CPU counters: "cycle" & "instret" CSRs have less than 64-bit when set (r/-) */
-  CSR_MZEXT_ZXNOCNT  = 7, /**< CPU mzext CSR (7): Custom extension - NO CPU counters: "cycle" & "instret" CSRs are NOT available at all when set (r/-) */
-  CSR_MZEXT_PMP      = 8, /**< CPU mzext CSR (8): PMP (physical memory protection) extension available when set (r/-) */
-  CSR_MZEXT_HPM      = 9  /**< CPU mzext CSR (9): HPM (hardware performance monitors) extension available when set (r/-) */
+  CSR_MZEXT_ZICSR     =  0, /**< CPU mzext CSR (0): Zicsr extension (I sub-extension) available when set (r/-) */
+  CSR_MZEXT_ZIFENCEI  =  1, /**< CPU mzext CSR (1): Zifencei extension (I sub-extension) available when set (r/-) */
+
+  CSR_MZEXT_ZFINX     =  5, /**< CPU mzext CSR (5): Zfinx extension (F sub-/alternative-extension) available when set (r/-) */
+  CSR_MZEXT_ZXSCNT    =  6, /**< CPU mzext CSR (6): Custom extension - Small CPU counters: "cycle" & "instret" CSRs have less than 64-bit when set (r/-) */
+  CSR_MZEXT_ZXNOCNT   =  7, /**< CPU mzext CSR (7): Custom extension - NO CPU counters: "cycle" & "instret" CSRs are NOT available at all when set (r/-) */
+  CSR_MZEXT_PMP       =  8, /**< CPU mzext CSR (8): PMP (physical memory protection) extension available when set (r/-) */
+  CSR_MZEXT_HPM       =  9, /**< CPU mzext CSR (9): HPM (hardware performance monitors) extension available when set (r/-) */
+  CSR_MZEXT_DEBUGMODE = 10  /**< CPU mzext CSR (10): RISC-V CPU debug mode available when set (r/-) */
 };
 
 
@@ -634,78 +537,140 @@ enum NEORV32_CLOCK_PRSC_enum {
 /** bootloader memory base address (r/-/x) */
 #define BOOTLOADER_BASE_ADDRESS (0xFFFF0000UL)
 /** peripheral/IO devices memory base address (r/w/x) */
-#define IO_BASE_ADDRESS (0xFFFFFF00UL)
+#define IO_BASE_ADDRESS         (0xFFFFFE00UL)
 /**@}*/
+
+
+// ############################################################################################################################
+// Peripheral/IO Devices - IO Address Space
+// ############################################################################################################################
 
 
 /**********************************************************************//**
  * @name IO Device: Custom Functions Subsystem (CFS)
  **************************************************************************/
 /**@{*/
+/** CFS base address */
+#define CFS_BASE (0xFFFFFE00UL) // /**< CFS base address */
+/** CFS address space size in bytes */
+#define CFS_SIZE (64*4) // /**< CFS address space size in bytes */
+
 /** custom CFS register 0 */
-#define CFS_REG_0  (*(IO_REG32 0xFFFFFF00UL)) // /**< (r)/(w): CFS register 0, user-defined */
+#define CFS_REG_0  (*(IO_REG32 (CFS_BASE + 0))) // /**< (r)/(w): CFS register 0, user-defined */
 /** custom CFS register 1 */
-#define CFS_REG_1  (*(IO_REG32 0xFFFFFF04UL)) // /**< (r)/(w): CFS register 1, user-defined */
+#define CFS_REG_1  (*(IO_REG32 (CFS_BASE + 4))) // /**< (r)/(w): CFS register 1, user-defined */
 /** custom CFS register 2 */
-#define CFS_REG_2  (*(IO_REG32 0xFFFFFF08UL)) // /**< (r)/(w): CFS register 2, user-defined */
+#define CFS_REG_2  (*(IO_REG32 (CFS_BASE + 8))) // /**< (r)/(w): CFS register 2, user-defined */
 /** custom CFS register 3 */
-#define CFS_REG_3  (*(IO_REG32 0xFFFFFF0CUL)) // /**< (r)/(w): CFS register 3, user-defined */
+#define CFS_REG_3  (*(IO_REG32 (CFS_BASE + 12))) // /**< (r)/(w): CFS register 3, user-defined */
 /** custom CFS register 4 */
-#define CFS_REG_4  (*(IO_REG32 0xFFFFFF10UL)) // /**< (r)/(w): CFS register 4, user-defined */
+#define CFS_REG_4  (*(IO_REG32 (CFS_BASE + 16))) // /**< (r)/(w): CFS register 4, user-defined */
 /** custom CFS register 5 */
-#define CFS_REG_5  (*(IO_REG32 0xFFFFFF14UL)) // /**< (r)/(w): CFS register 5, user-defined */
+#define CFS_REG_5  (*(IO_REG32 (CFS_BASE + 20))) // /**< (r)/(w): CFS register 5, user-defined */
 /** custom CFS register 6 */
-#define CFS_REG_6  (*(IO_REG32 0xFFFFFF18UL)) // /**< (r)/(w): CFS register 6, user-defined */
+#define CFS_REG_6  (*(IO_REG32 (CFS_BASE + 24))) // /**< (r)/(w): CFS register 6, user-defined */
 /** custom CFS register 7 */
-#define CFS_REG_7  (*(IO_REG32 0xFFFFFF1CUL)) // /**< (r)/(w): CFS register 7, user-defined */
+#define CFS_REG_7  (*(IO_REG32 (CFS_BASE + 28))) // /**< (r)/(w): CFS register 7, user-defined */
 /** custom CFS register 8 */
-#define CFS_REG_8  (*(IO_REG32 0xFFFFFF20UL)) // /**< (r)/(w): CFS register 8, user-defined */
+#define CFS_REG_8  (*(IO_REG32 (CFS_BASE + 32))) // /**< (r)/(w): CFS register 8, user-defined */
 /** custom CFS register 9 */
-#define CFS_REG_9  (*(IO_REG32 0xFFFFFF24UL)) // /**< (r)/(w): CFS register 9, user-defined */
+#define CFS_REG_9  (*(IO_REG32 (CFS_BASE + 36))) // /**< (r)/(w): CFS register 9, user-defined */
 /** custom CFS register 10 */
-#define CFS_REG_10 (*(IO_REG32 0xFFFFFF28UL)) // /**< (r)/(w): CFS register 10, user-defined */
+#define CFS_REG_10 (*(IO_REG32 (CFS_BASE + 40))) // /**< (r)/(w): CFS register 10, user-defined */
 /** custom CFS register 11 */
-#define CFS_REG_11 (*(IO_REG32 0xFFFFFF2CUL)) // /**< (r)/(w): CFS register 11, user-defined */
+#define CFS_REG_11 (*(IO_REG32 (CFS_BASE + 44))) // /**< (r)/(w): CFS register 11, user-defined */
 /** custom CFS register 12 */
-#define CFS_REG_12 (*(IO_REG32 0xFFFFFF30UL)) // /**< (r)/(w): CFS register 12, user-defined */
+#define CFS_REG_12 (*(IO_REG32 (CFS_BASE + 48))) // /**< (r)/(w): CFS register 12, user-defined */
 /** custom CFS register 13 */
-#define CFS_REG_13 (*(IO_REG32 0xFFFFFF34UL)) // /**< (r)/(w): CFS register 13, user-defined */
+#define CFS_REG_13 (*(IO_REG32 (CFS_BASE + 52))) // /**< (r)/(w): CFS register 13, user-defined */
 /** custom CFS register 14 */
-#define CFS_REG_14 (*(IO_REG32 0xFFFFFF38UL)) // /**< (r)/(w): CFS register 14, user-defined */
+#define CFS_REG_14 (*(IO_REG32 (CFS_BASE + 56))) // /**< (r)/(w): CFS register 14, user-defined */
 /** custom CFS register 15 */
-#define CFS_REG_15 (*(IO_REG32 0xFFFFFF3CUL)) // /**< (r)/(w): CFS register 15, user-defined */
+#define CFS_REG_15 (*(IO_REG32 (CFS_BASE + 60))) // /**< (r)/(w): CFS register 15, user-defined */
 /** custom CFS register 16 */
-#define CFS_REG_16 (*(IO_REG32 0xFFFFFF40UL)) // /**< (r)/(w): CFS register 16, user-defined */
+#define CFS_REG_16 (*(IO_REG32 (CFS_BASE + 64))) // /**< (r)/(w): CFS register 16, user-defined */
 /** custom CFS register 17 */
-#define CFS_REG_17 (*(IO_REG32 0xFFFFFF44UL)) // /**< (r)/(w): CFS register 17, user-defined */
+#define CFS_REG_17 (*(IO_REG32 (CFS_BASE + 68))) // /**< (r)/(w): CFS register 17, user-defined */
 /** custom CFS register 18 */
-#define CFS_REG_18 (*(IO_REG32 0xFFFFFF48UL)) // /**< (r)/(w): CFS register 18, user-defined */
+#define CFS_REG_18 (*(IO_REG32 (CFS_BASE + 72))) // /**< (r)/(w): CFS register 18, user-defined */
 /** custom CFS register 19 */
-#define CFS_REG_19 (*(IO_REG32 0xFFFFFF4CUL)) // /**< (r)/(w): CFS register 19, user-defined */
+#define CFS_REG_19 (*(IO_REG32 (CFS_BASE + 76))) // /**< (r)/(w): CFS register 19, user-defined */
 /** custom CFS register 20 */
-#define CFS_REG_20 (*(IO_REG32 0xFFFFFF50UL)) // /**< (r)/(w): CFS register 20, user-defined */
+#define CFS_REG_20 (*(IO_REG32 (CFS_BASE + 80))) // /**< (r)/(w): CFS register 20, user-defined */
 /** custom CFS register 21 */
-#define CFS_REG_21 (*(IO_REG32 0xFFFFFF54UL)) // /**< (r)/(w): CFS register 21, user-defined */
+#define CFS_REG_21 (*(IO_REG32 (CFS_BASE + 84))) // /**< (r)/(w): CFS register 21, user-defined */
 /** custom CFS register 22 */
-#define CFS_REG_22 (*(IO_REG32 0xFFFFFF58UL)) // /**< (r)/(w): CFS register 22, user-defined */
+#define CFS_REG_22 (*(IO_REG32 (CFS_BASE + 88))) // /**< (r)/(w): CFS register 22, user-defined */
 /** custom CFS register 23 */
-#define CFS_REG_23 (*(IO_REG32 0xFFFFFF5CUL)) // /**< (r)/(w): CFS register 23, user-defined */
+#define CFS_REG_23 (*(IO_REG32 (CFS_BASE + 92))) // /**< (r)/(w): CFS register 23, user-defined */
 /** custom CFS register 24 */
-#define CFS_REG_24 (*(IO_REG32 0xFFFFFF60UL)) // /**< (r)/(w): CFS register 24, user-defined */
+#define CFS_REG_24 (*(IO_REG32 (CFS_BASE + 96))) // /**< (r)/(w): CFS register 24, user-defined */
 /** custom CFS register 25 */
-#define CFS_REG_25 (*(IO_REG32 0xFFFFFF64UL)) // /**< (r)/(w): CFS register 25, user-defined */
+#define CFS_REG_25 (*(IO_REG32 (CFS_BASE + 100))) // /**< (r)/(w): CFS register 25, user-defined */
 /** custom CFS register 26 */
-#define CFS_REG_26 (*(IO_REG32 0xFFFFFF68UL)) // /**< (r)/(w): CFS register 26, user-defined */
+#define CFS_REG_26 (*(IO_REG32 (CFS_BASE + 104))) // /**< (r)/(w): CFS register 26, user-defined */
 /** custom CFS register 27 */
-#define CFS_REG_27 (*(IO_REG32 0xFFFFFF6CUL)) // /**< (r)/(w): CFS register 27, user-defined */
+#define CFS_REG_27 (*(IO_REG32 (CFS_BASE + 108))) // /**< (r)/(w): CFS register 27, user-defined */
 /** custom CFS register 28 */
-#define CFS_REG_28 (*(IO_REG32 0xFFFFFF70UL)) // /**< (r)/(w): CFS register 28, user-defined */
+#define CFS_REG_28 (*(IO_REG32 (CFS_BASE + 112))) // /**< (r)/(w): CFS register 28, user-defined */
 /** custom CFS register 29 */
-#define CFS_REG_29 (*(IO_REG32 0xFFFFFF74UL)) // /**< (r)/(w): CFS register 29, user-defined */
+#define CFS_REG_29 (*(IO_REG32 (CFS_BASE + 116))) // /**< (r)/(w): CFS register 29, user-defined */
 /** custom CFS register 30 */
-#define CFS_REG_30 (*(IO_REG32 0xFFFFFF78UL)) // /**< (r)/(w): CFS register 30, user-defined */
+#define CFS_REG_30 (*(IO_REG32 (CFS_BASE + 120))) // /**< (r)/(w): CFS register 30, user-defined */
 /** custom CFS register 31 */
-#define CFS_REG_31 (*(IO_REG32 0xFFFFFF7CUL)) // /**< (r)/(w): CFS register 31, user-defined */
+#define CFS_REG_31 (*(IO_REG32 (CFS_BASE + 124))) // /**< (r)/(w): CFS register 31, user-defined */
+/**@}*/
+
+
+/**********************************************************************//**
+ * @name IO Device: Pulse Width Modulation Controller (PWM)
+ **************************************************************************/
+/**@{*/
+/** PWM base address */
+#define PWM_BASE (0xFFFFFE80UL) // /**< PWM base address */
+/** PWM address space size in bytes */
+#define PWM_SIZE (16*4) // /**< PWM address space size in bytes */
+
+/** PWM control register (r/w) */
+#define PWM_CT     (*(IO_REG32 (PWM_BASE + 0))) // r/w: control register
+/** PWM duty cycle register 0 (r/w) */
+#define PWM_DUTY0  (*(IO_REG32 (PWM_BASE + 4))) // r/w: duty cycle channel 3:0
+/** PWM duty cycle register 1 (r/w) */
+#define PWM_DUTY1  (*(IO_REG32 (PWM_BASE + 8))) // r/w: duty cycle channel 7:4
+/** PWM duty cycle register 2 (r/w) */
+#define PWM_DUTY2  (*(IO_REG32 (PWM_BASE + 12))) // r/w: duty cycle channel 11:8
+/** PWM duty cycle register 3 (r/w) */
+#define PWM_DUTY3  (*(IO_REG32 (PWM_BASE + 16))) // r/w: duty cycle channel 15:12
+/** PWM duty cycle register 4 (r/w) */
+#define PWM_DUTY4  (*(IO_REG32 (PWM_BASE + 20))) // r/w: duty cycle channel 19:16
+/** PWM duty cycle register 5 (r/w) */
+#define PWM_DUTY5  (*(IO_REG32 (PWM_BASE + 24))) // r/w: duty cycle channel 23:20
+/** PWM duty cycle register 6 (r/w) */
+#define PWM_DUTY6  (*(IO_REG32 (PWM_BASE + 28))) // r/w: duty cycle channel 27:24
+/** PWM duty cycle register 7 (r/w) */
+#define PWM_DUTY7  (*(IO_REG32 (PWM_BASE + 32))) // r/w: duty cycle channel 31:28
+/** PWM duty cycle register 8 (r/w) */
+#define PWM_DUTY8  (*(IO_REG32 (PWM_BASE + 36))) // r/w: duty cycle channel 35:32
+/** PWM duty cycle register 9 (r/w) */
+#define PWM_DUTY9  (*(IO_REG32 (PWM_BASE + 40))) // r/w: duty cycle channel 39:36
+/** PWM duty cycle register 10 (r/w) */
+#define PWM_DUTY10 (*(IO_REG32 (PWM_BASE + 44))) // r/w: duty cycle channel 43:40
+/** PWM duty cycle register 11 (r/w) */
+#define PWM_DUTY11 (*(IO_REG32 (PWM_BASE + 48))) // r/w: duty cycle channel 47:44
+/** PWM duty cycle register 12 (r/w) */
+#define PWM_DUTY12 (*(IO_REG32 (PWM_BASE + 52))) // r/w: duty cycle channel 51:48
+/** PWM duty cycle register 13 (r/w) */
+#define PWM_DUTY13 (*(IO_REG32 (PWM_BASE + 56))) // r/w: duty cycle channel 55:52
+/** PWM duty cycle register 14 (r/w) */
+#define PWM_DUTY14 (*(IO_REG32 (PWM_BASE + 60))) // r/w: duty cycle channel 59:56
+
+/** PWM control register bits */
+enum NEORV32_PWM_CT_enum {
+  PWM_CT_EN    =  0, /**< PWM control register(0) (r/w): PWM controller enable */
+  PWM_CT_PRSC0 =  1, /**< PWM control register(1) (r/w): Clock prescaler select bit 0 */
+  PWM_CT_PRSC1 =  2, /**< PWM control register(2) (r/w): Clock prescaler select bit 1 */
+  PWM_CT_PRSC2 =  3  /**< PWM control register(3) (r/w): Clock prescaler select bit 2 */
+};
 /**@}*/
 
 
@@ -713,10 +678,15 @@ enum NEORV32_CLOCK_PRSC_enum {
  * @name IO Device: General Purpose Input/Output Port Unit (GPIO)
  **************************************************************************/
 /**@{*/
+/** GPIO base address */
+#define GPIO_BASE (0xFFFFFF80UL) // /**< GPIO base address */
+/** GPIO address space size in bytes */
+#define GPIO_SIZE (2*4) // /**< GPIO address space size in bytes */
+
 /** read access: GPIO parallel input port 32-bit (r/-), write_access: pin-change IRQ for each input pin (-/w) */
-#define GPIO_INPUT  (*(IO_REG32 0xFFFFFF80UL))
+#define GPIO_INPUT  (*(IO_REG32 (GPIO_BASE + 0)))
 /** GPIO parallel output port 32-bit (r/w) */
-#define GPIO_OUTPUT (*(IO_REG32 0xFFFFFF84UL))
+#define GPIO_OUTPUT (*(IO_REG32 (GPIO_BASE + 4)))
 /**@}*/
 
 
@@ -724,8 +694,13 @@ enum NEORV32_CLOCK_PRSC_enum {
  * @name IO Device: True Random Number Generator (TRNG)
  **************************************************************************/
 /**@{*/
+/** TRNG base address */
+#define TRNG_BASE (0xFFFFFF88UL) // /**< TRNG base address */
+/** TRNG address space size in bytes */
+#define TRNG_SIZE (1*4) // /**< TRNG address space size in bytes */
+
 /** TRNG control/data register (r/w) */
-#define TRNG_CT (*(IO_REG32 0xFFFFFF88UL))
+#define TRNG_CT (*(IO_REG32 (TRNG_BASE + 0)))
 
 /** TRNG control/data register bits */
 enum NEORV32_TRNG_CT_enum {
@@ -742,8 +717,13 @@ enum NEORV32_TRNG_CT_enum {
  * @name IO Device: Watchdog Timer (WDT)
  **************************************************************************/
 /**@{*/
+/** WDT base address */
+#define WDT_BASE (0xFFFFFF8CUL) // /**< WDT base address */
+/** WDT address space size in bytes */
+#define WDT_SIZE (1*4) // /**< WDT address space size in bytes */
+
 /** Watchdog control register (r/w) */
-#define WDT_CT (*(IO_REG32 0xFFFFFF8CUL))
+#define WDT_CT (*(IO_REG32 (WDT_BASE + 0)))
 
 /** WTD control register bits */
 enum NEORV32_WDT_CT_enum {
@@ -764,14 +744,19 @@ enum NEORV32_WDT_CT_enum {
  * @name IO Device: Machine System Timer (MTIME)
  **************************************************************************/
 /**@{*/
+/** MTIME base address */
+#define MTIME_BASE (0xFFFFFF90UL) // /**< MTIME base address */
+/** MTIME address space size in bytes */
+#define MTIME_SIZE (4*4) // /**< MTIME address space size in bytes */
+
 /** MTIME (time register) low word (r/w) */
-#define MTIME_LO     (*(IO_REG32 0xFFFFFF90UL))
+#define MTIME_LO     (*(IO_REG32 (MTIME_BASE + 0)))
 /** MTIME (time register) high word (r/w) */
-#define MTIME_HI     (*(IO_REG32 0xFFFFFF94UL))
+#define MTIME_HI     (*(IO_REG32 (MTIME_BASE + 4)))
 /** MTIMECMP (time compare register) low word (r/w) */
-#define MTIMECMP_LO  (*(IO_REG32 0xFFFFFF98UL))
+#define MTIMECMP_LO  (*(IO_REG32 (MTIME_BASE + 8)))
 /** MTIMECMP (time register) high word (r/w) */
-#define MTIMECMP_HI  (*(IO_REG32 0xFFFFFF9CUL))
+#define MTIMECMP_HI  (*(IO_REG32 (MTIME_BASE + 12)))
 
 /** MTIME (time register) 64-bit access (r/w) */
 #define MTIME        (*(IO_REG64 (&MTIME_LO)))
@@ -784,15 +769,26 @@ enum NEORV32_WDT_CT_enum {
  * @name IO Device: Primary/Secondary Universal Asynchronous Receiver and Transmitter (UART0 / UART1)
  **************************************************************************/
 /**@{*/
+/** UART0 base address */
+#define UART0_BASE (0xFFFFFFA0UL) // /**< UART0 base address */
+/** UART0 address space size in bytes */
+#define UART0_SIZE (2*4) // /**< UART0 address space size in bytes */
+
 /** UART0 control register (r/w) */
-#define UART0_CT  (*(IO_REG32 0xFFFFFFA0UL))
+#define UART0_CT   (*(IO_REG32 (UART0_BASE + 0)))
 /** UART0 receive/transmit data register (r/w) */
-#define UART0_DATA (*(IO_REG32 0xFFFFFFA4UL))
+#define UART0_DATA (*(IO_REG32 (UART0_BASE + 4)))
+
+
+/** UART1 base address */
+#define UART1_BASE (0xFFFFFFD0UL) // /**< UART1 base address */
+/** UART1 address space size in bytes */
+#define UART1_SIZE (2*4) // /**< UART1 address space size in bytes */
 
 /** UART1 control register (r/w) */
-#define UART1_CT  (*(IO_REG32 0xFFFFFFD0UL))
+#define UART1_CT   (*(IO_REG32 (UART1_BASE + 0)))
 /** UART1 receive/transmit data register (r/w) */
-#define UART1_DATA (*(IO_REG32 0xFFFFFFD4UL))
+#define UART1_DATA (*(IO_REG32 (UART1_BASE + 4)))
 
 /** UART0/UART1 control register bits */
 enum NEORV32_UART_CT_enum {
@@ -855,10 +851,15 @@ enum NEORV32_UART_DATA_enum {
  * @name IO Device: Serial Peripheral Interface Controller (SPI)
  **************************************************************************/
 /**@{*/
+/** SPI base address */
+#define SPI_BASE (0xFFFFFFA8UL) // /**< SPI base address */
+/** SPI address space size in bytes */
+#define SPI_SIZE (2*4) // /**< SPI address space size in bytes */
+
 /** SPI control register (r/w) */
-#define SPI_CT  (*(IO_REG32 0xFFFFFFA8UL))
+#define SPI_CT  (*(IO_REG32 (SPI_BASE + 0)))
 /** SPI receive/transmit data register (r/w) */
-#define SPI_DATA (*(IO_REG32 0xFFFFFFACUL))
+#define SPI_DATA (*(IO_REG32 (SPI_BASE + 4)))
 
 /** SPI control register bits */
 enum NEORV32_SPI_CT_enum {
@@ -887,10 +888,15 @@ enum NEORV32_SPI_CT_enum {
  * @name IO Device: Two-Wire Interface Controller (TWI)
  **************************************************************************/
 /**@{*/
+/** TWI base address */
+#define TWI_BASE (0xFFFFFFB0UL) // /**< TWI base address */
+/** TWI address space size in bytes */
+#define TWI_SIZE (2*4) // /**< TWI address space size in bytes */
+
 /** TWI control register (r/w) */
-#define TWI_CT   (*(IO_REG32 0xFFFFFFB0UL))
+#define TWI_CT   (*(IO_REG32 (TWI_BASE + 0)))
 /** TWI receive/transmit data register (r/w) */
-#define TWI_DATA (*(IO_REG32 0xFFFFFFB4UL))
+#define TWI_DATA (*(IO_REG32 (TWI_BASE + 4)))
 
 /** TWI control register bits */
 enum NEORV32_TWI_CT_enum {
@@ -916,48 +922,22 @@ enum NEORV32_TWI_DATA_enum {
 
 
 /**********************************************************************//**
- * @name IO Device: Pulse Width Modulation Controller (PWM)
- **************************************************************************/
-/**@{*/
-/** PWM control register (r/w) */
-#define PWM_CT   (*(IO_REG32 0xFFFFFFB8UL)) // r/w: control register
-/** PWM duty cycle register (4-channels) (r/w) */
-#define PWM_DUTY (*(IO_REG32 0xFFFFFFBCUL)) // r/w: duty cycle channel 1 and 0
-
-/** PWM control register bits */
-enum NEORV32_PWM_CT_enum {
-  PWM_CT_EN    =  0, /**< PWM control register(0) (r/w): PWM controller enable */
-  PWM_CT_PRSC0 =  1, /**< PWM control register(1) (r/w): Clock prescaler select bit 0 */
-  PWM_CT_PRSC1 =  2, /**< PWM control register(2) (r/w): Clock prescaler select bit 1 */
-  PWM_CT_PRSC2 =  3  /**< PWM control register(3) (r/w): Clock prescaler select bit 2 */
-};
-
-/**PWM duty cycle register bits */
-enum NEORV32_PWM_DUTY_enum {
-  PWM_DUTY_CH0_LSB =  0, /**< PWM duty cycle register(0)  (r/w): Channel 0 duty cycle (8-bit) LSB */
-  PWM_DUTY_CH0_MSB =  7, /**< PWM duty cycle register(7)  (r/w): Channel 0 duty cycle (8-bit) MSB */
-  PWM_DUTY_CH1_LSB =  8, /**< PWM duty cycle register(8)  (r/w): Channel 1 duty cycle (8-bit) LSB */
-  PWM_DUTY_CH1_MSB = 15, /**< PWM duty cycle register(15) (r/w): Channel 1 duty cycle (8-bit) MSB */
-  PWM_DUTY_CH2_LSB = 16, /**< PWM duty cycle register(16) (r/w): Channel 2 duty cycle (8-bit) LSB */
-  PWM_DUTY_CH2_MSB = 23, /**< PWM duty cycle register(23) (r/w): Channel 2 duty cycle (8-bit) MSB */
-  PWM_DUTY_CH3_LSB = 24, /**< PWM duty cycle register(24) (r/w): Channel 3 duty cycle (8-bit) LSB */
-  PWM_DUTY_CH3_MSB = 31  /**< PWM duty cycle register(31) (r/w): Channel 3 duty cycle (8-bit) MSB */
-};
-/**@}*/
-
-
-/**********************************************************************//**
  * @name IO Device: Numerically-Controlled Oscillator (NCO)
  **************************************************************************/
 /**@{*/
+/** NCO base address */
+#define NCO_BASE (0xFFFFFFC0UL) // /**< NCO base address */
+/** NCO address space size in bytes */
+#define NCO_SIZE (4*4) // /**< NCO address space size in bytes */
+
 /** NCO control register (r/w) */
-#define NCO_CT       (*(IO_REG32 0xFFFFFFC0UL)) // r/w: control register
+#define NCO_CT       (*(IO_REG32 (NCO_BASE + 0))) // r/w: control register
 /** NCO channel 0 tuning word (r/w) */
-#define NCO_TUNE_CH0 (*(IO_REG32 0xFFFFFFC4UL)) // r/w: tuning word channel 0
+#define NCO_TUNE_CH0 (*(IO_REG32 (NCO_BASE + 4))) // r/w: tuning word channel 0
 /** NCO channel 1 tuning word (r/w) */
-#define NCO_TUNE_CH1 (*(IO_REG32 0xFFFFFFC8UL)) // r/w: tuning word channel 1
+#define NCO_TUNE_CH1 (*(IO_REG32 (NCO_BASE + 8))) // r/w: tuning word channel 1
 /** NCO channel 2 tuning word (r/w) */
-#define NCO_TUNE_CH2 (*(IO_REG32 0xFFFFFFCCUL)) // r/w: tuning word channel 2
+#define NCO_TUNE_CH2 (*(IO_REG32 (NCO_BASE + 12))) // r/w: tuning word channel 2
 
 /** NCO control register bits */
 enum NEORV32_NCO_CT_enum {
@@ -1006,10 +986,15 @@ enum NEORV32_NCO_CT_enum {
  * @name IO Device: Smart LED Hardware Interface (NEOLED)
  **************************************************************************/
 /**@{*/
+/** NEOLED base address */
+#define NEOLED_BASE (0xFFFFFFD8UL) // /**< NEOLED base address */
+/** NEOLED address space size in bytes */
+#define NEOLED_SIZE (2*4) // /**< NEOLED address space size in bytes */
+
 /** NEOLED control register (r/w) */
-#define NEOLED_CT   (*(IO_REG32 0xFFFFFFD8UL)) // r/w: control register
+#define NEOLED_CT   (*(IO_REG32 (NEOLED_BASE + 0))) // r/w: control register
 /** NEOLED TX data register (-/w) */
-#define NEOLED_DATA (*(IO_REG32 0xFFFFFFDCUL)) // -/w: TX data register
+#define NEOLED_DATA (*(IO_REG32 (NEOLED_BASE + 4))) // -/w: TX data register
 
 /** NEOLED control register bits */
 enum NEORV32_NEOLED_CT_enum {
@@ -1053,36 +1038,41 @@ enum NEORV32_NEOLED_CT_enum {
  * @name IO Device: System Configuration Info Memory (SYSINFO)
  **************************************************************************/
 /**@{*/
+/** NEOLED base address */
+#define SYSINFO_BASE (0xFFFFFFE0UL) // /**< SYSINFO base address */
+/** NEOLED address space size in bytes */
+#define SYSINFO_SIZE (8*4) // /**< SYSINFO address space size in bytes */
+
 /** SYSINFO(0): Clock speed */
-#define SYSINFO_CLK         (*(IO_ROM32 0xFFFFFFE0UL))
+#define SYSINFO_CLK         (*(IO_ROM32 (SYSINFO_BASE + 0)))
 /** SYSINFO(1): Custom user code (via "USER_CODE" generic) */
-#define SYSINFO_USER_CODE   (*(IO_ROM32 0xFFFFFFE4UL))
+#define SYSINFO_USER_CODE   (*(IO_ROM32 (SYSINFO_BASE + 4)))
 /** SYSINFO(2): Clock speed */
-#define SYSINFO_FEATURES    (*(IO_ROM32 0xFFFFFFE8UL))
+#define SYSINFO_FEATURES    (*(IO_ROM32 (SYSINFO_BASE + 8)))
 /** SYSINFO(3): Cache configuration */
-#define SYSINFO_CACHE       (*(IO_ROM32 0xFFFFFFECUL))
+#define SYSINFO_CACHE       (*(IO_ROM32 (SYSINFO_BASE + 12)))
 /** SYSINFO(4): Instruction memory address space base */
-#define SYSINFO_ISPACE_BASE (*(IO_ROM32 0xFFFFFFF0UL))
+#define SYSINFO_ISPACE_BASE (*(IO_ROM32 (SYSINFO_BASE + 16)))
 /** SYSINFO(5): Data memory address space base */
-#define SYSINFO_DSPACE_BASE (*(IO_ROM32 0xFFFFFFF4UL))
+#define SYSINFO_DSPACE_BASE (*(IO_ROM32 (SYSINFO_BASE + 20)))
 /** SYSINFO(6): Internal instruction memory (IMEM) size in bytes */
-#define SYSINFO_IMEM_SIZE   (*(IO_ROM32 0xFFFFFFF8UL))
+#define SYSINFO_IMEM_SIZE   (*(IO_ROM32 (SYSINFO_BASE + 24)))
 /** SYSINFO(7): Internal data memory (DMEM) size in bytes */
-#define SYSINFO_DMEM_SIZE   (*(IO_ROM32 0xFFFFFFFCUL))
+#define SYSINFO_DMEM_SIZE   (*(IO_ROM32 (SYSINFO_BASE + 28)))
 /**@}*/
 
 /**********************************************************************//**
  * SYSINFO_FEATURES (r/-): Implemented processor devices/features
  **************************************************************************/
  enum NEORV32_SYSINFO_FEATURES_enum {
-  SYSINFO_FEATURES_BOOTLOADER       =  0, /**< SYSINFO_FEATURES  (0) (r/-): Bootloader implemented when 1 (via BOOTLOADER_EN generic) */
+  SYSINFO_FEATURES_BOOTLOADER       =  0, /**< SYSINFO_FEATURES  (0) (r/-): Bootloader implemented when 1 (via INT_BOOTLOADER_EN generic) */
   SYSINFO_FEATURES_MEM_EXT          =  1, /**< SYSINFO_FEATURES  (1) (r/-): External bus interface implemented when 1 (via MEM_EXT_EN generic) */
   SYSINFO_FEATURES_MEM_INT_IMEM     =  2, /**< SYSINFO_FEATURES  (2) (r/-): Processor-internal instruction memory implemented when 1 (via MEM_INT_IMEM_EN generic) */
-  SYSINFO_FEATURES_MEM_INT_IMEM_ROM =  3, /**< SYSINFO_FEATURES  (3) (r/-): Processor-internal instruction memory implemented as ROM when 1 (via MEM_INT_IMEM_ROM generic) */
-  SYSINFO_FEATURES_MEM_INT_DMEM     =  4, /**< SYSINFO_FEATURES  (4) (r/-): Processor-internal data memory implemented when 1 (via MEM_INT_DMEM_EN generic) */
-  SYSINFO_FEATURES_MEM_EXT_ENDIAN   =  5, /**< SYSINFO_FEATURES  (5) (r/-): External bus interface uses BIG-endian byte-order when 1 (via package.xbus_big_endian_c constant) */
-  SYSINFO_FEATURES_ICACHE           =  6, /**< SYSINFO_FEATURES  (6) (r/-): Processor-internal instruction cache implemented when 1 (via ICACHE_EN generic) */
+  SYSINFO_FEATURES_MEM_INT_DMEM     =  3, /**< SYSINFO_FEATURES  (3) (r/-): Processor-internal data memory implemented when 1 (via MEM_INT_DMEM_EN generic) */
+  SYSINFO_FEATURES_MEM_EXT_ENDIAN   =  4, /**< SYSINFO_FEATURES  (4) (r/-): External bus interface uses BIG-endian byte-order when 1 (via package.xbus_big_endian_c constant) */
+  SYSINFO_FEATURES_ICACHE           =  5, /**< SYSINFO_FEATURES  (5) (r/-): Processor-internal instruction cache implemented when 1 (via ICACHE_EN generic) */
 
+  SYSINFO_FEATURES_OCD              = 14, /**< SYSINFO_FEATURES (14) (r/-): On-chip debugger implemented when 1 (via ON_CHIP_DEBUGGER_EN generic) */
   SYSINFO_FEATURES_HW_RESET         = 15, /**< SYSINFO_FEATURES (15) (r/-): Dedicated hardware reset of core registers implemented when 1 (via package's dedicated_reset_c constant) */
 
   SYSINFO_FEATURES_IO_GPIO          = 16, /**< SYSINFO_FEATURES (16) (r/-): General purpose input/output port unit implemented when 1 (via IO_GPIO_EN generic) */
@@ -1149,5 +1139,10 @@ enum NEORV32_NEOLED_CT_enum {
 #include "neorv32_twi.h"
 #include "neorv32_uart.h"
 #include "neorv32_wdt.h"
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // neorv32_h

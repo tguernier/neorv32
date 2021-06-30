@@ -124,7 +124,7 @@ begin
   -- Note that rstn_i can be asserted by an external reset and also by a watchdog-cause reset.
   --
   -- Most default peripheral devices of the NEORV32 do NOT use a dedicated reset at all. Instead, these units are reset by writing ZERO
-  -- to a specific "control register" located right at the beginning of the devices's address space (so this register is cleared at first).
+  -- to a specific "control register" located right at the beginning of the device's address space (so this register is cleared at first).
   -- The crt0 start-up code write ZERO to every single address in the processor's IO space - including the CFS.
   -- Make sure that this clearing does not cause any unintended actions in the CFS.
 
@@ -210,17 +210,15 @@ begin
 --    ack_o <= ... -- or define the ACK by yourself (example: some registers are read-only, some others can only be written, ...)
 
       -- write access --
-      for i in 0 to 3 loop
-        if (wren = '1') then -- word-wide write-access only!
-          case addr is -- make sure to use the internal 'addr' signal for the read/write interface
-            when cfs_reg0_addr_c => cfs_reg_wr(0) <= data_i; -- for example: control register
-            when cfs_reg1_addr_c => cfs_reg_wr(1) <= data_i; -- for example: data in/out fifo
-            when cfs_reg2_addr_c => cfs_reg_wr(2) <= data_i; -- for example: command fifo
-            when cfs_reg3_addr_c => cfs_reg_wr(3) <= data_i; -- for example: status register
-            when others          => NULL;
-          end case;
-        end if;
-      end loop; -- i
+      if (wren = '1') then -- word-wide write-access only!
+        case addr is -- make sure to use the internal "addr" signal for the read/write interface
+          when cfs_reg0_addr_c => cfs_reg_wr(0) <= data_i; -- for example: control register
+          when cfs_reg1_addr_c => cfs_reg_wr(1) <= data_i; -- for example: data in/out fifo
+          when cfs_reg2_addr_c => cfs_reg_wr(2) <= data_i; -- for example: command fifo
+          when cfs_reg3_addr_c => cfs_reg_wr(3) <= data_i; -- for example: status register
+          when others          => NULL;
+        end case;
+      end if;
 
       -- read access --
       data_o <= (others => '0'); -- the output has to be zero if there is no actual read access

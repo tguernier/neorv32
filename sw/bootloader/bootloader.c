@@ -2,9 +2,10 @@
 // # << NEORV32 - Bootloader >>                                                                    #
 // # ********************************************************************************************* #
 // # In order to run the bootloader on *any* CPU configuration, the bootloader should be compiled  #
-// # unsing the base ISA (rv32i/rv32e) only.                                                       #
+// # using the base ISA (rv32i/rv32e) only.                                                        #
 // # ********************************************************************************************* #
 // # Boot from (internal) instruction memory, UART or SPI Flash.                                   #
+// # Bootloader executables (neorv32_exe.bin) are LITTLE-ENDIAN!                                   #
 // #                                                                                               #
 // # The bootloader uses the primary UART (UART0) for user console interface.                      #
 // #                                                                                               #
@@ -105,8 +106,7 @@ enum ERROR_CODES {
   ERROR_SIZE      = 1, /**< 1: Insufficient instruction memory capacity */
   ERROR_CHECKSUM  = 2, /**< 2: Checksum error in executable */
   ERROR_FLASH     = 3, /**< 3: SPI flash access error */
-  ERROR_ROM       = 4, /**< 4: Instruction memory is marked as read-only */
-  ERROR_SYSTEM    = 5  /**< 5: System exception */
+  ERROR_SYSTEM    = 4  /**< 4: System exception */
 };
 
 
@@ -226,7 +226,7 @@ int main(void) {
   // Configure machine system timer interrupt for ~2Hz
   neorv32_mtime_set_timecmp(neorv32_mtime_get_time() + (clock_speed/4));
 
-  // confiure trap handler (bare-metal, no neorv32 rte available)
+  // configure trap handler (bare-metal, no neorv32 rte available)
   neorv32_cpu_csr_write(CSR_MTVEC, (uint32_t)(&bootloader_trap_handler));
 
   // active timer IRQ
@@ -250,7 +250,7 @@ int main(void) {
   neorv32_uart_print("\n");
   start_app();
 
-  return 0;
+  return 1; // bootloader should never return
 #endif
 
 
@@ -338,15 +338,12 @@ int main(void) {
     else if (c == 'e') { // start application program
       start_app();
     }
-    else if (c == '?') {
-      neorv32_uart_print("by Stephan Nolting");
-    }
     else { // unknown command
       neorv32_uart_print("Invalid CMD");
     }
   }
 
-  return 0; // bootloader should never return
+  return 1; // bootloader should never return
 }
 
 
@@ -438,6 +435,8 @@ void __attribute__((__interrupt__)) bootloader_trap_handler(void) {
       print_hex_word(cause);
       neorv32_uart_print(" @ pc=");
       print_hex_word(neorv32_cpu_csr_read(CSR_MEPC));
+      neorv32_uart_print(" mtval=");
+      print_hex_word(neorv32_cpu_csr_read(CSR_MTVAL));
       system_error(ERROR_SYSTEM);
     }
   }
@@ -452,12 +451,6 @@ void __attribute__((__interrupt__)) bootloader_trap_handler(void) {
 void get_exe(int src) {
 
   getting_exe = 1; // to inform trap handler we were trying to get an executable
-
-  // is MEM implemented and read-only?
-  if ((SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_INT_IMEM_ROM)) &&
-      (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_INT_IMEM)))  {
-    system_error(ERROR_ROM);
-  }
 
   // flash image base address
   uint32_t addr = SPI_FLASH_BOOT_ADR;
@@ -602,10 +595,10 @@ uint32_t get_exe_word(int src, uint32_t addr) {
   uint32_t i;
   for (i=0; i<4; i++) {
     if (src == EXE_STREAM_UART) {
-      data.uint8[3-i] = (uint8_t)neorv32_uart_getc();
+      data.uint8[i] = (uint8_t)neorv32_uart_getc();
     }
     else {
-      data.uint8[3-i] = spi_flash_read_byte(addr + i);
+      data.uint8[i] = spi_flash_read_byte(addr + i);
     }
   }
 
@@ -715,7 +708,7 @@ void spi_flash_write_word(uint32_t addr, uint32_t wdata) {
 
   int i;
   for (i=0; i<4; i++) {
-    spi_flash_write_byte(addr + i, data.uint8[3-i]);
+    spi_flash_write_byte(addr + i, data.uint8[i]);
   }
 }
 

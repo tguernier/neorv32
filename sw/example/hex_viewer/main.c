@@ -65,7 +65,7 @@ uint32_t hexstr_to_uint(char *buffer, uint8_t length);
  *
  * @note This program requires the UART to be synthesized.
  *
- * @return Irrelevant.
+ * @return 0 if execution was successful
  **************************************************************************/
 int main() {
 
@@ -74,7 +74,7 @@ int main() {
 
   // check if UART unit is implemented at all
   if (neorv32_uart_available() == 0) {
-    return 0;
+    return 1;
   }
 
 
@@ -210,7 +210,7 @@ void atomic_cas(void) {
   char terminal_buffer[16];
   uint32_t mem_address, rdata, wdata, status;
 
-  if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A_EXT)) != 0) {
+  if ((neorv32_cpu_csr_read(CSR_MISA) & (1<<CSR_MISA_A)) != 0) {
 
     // enter memory address
     neorv32_uart_printf("Enter memory address (8 hex chars): 0x");

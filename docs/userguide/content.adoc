@@ -1,0 +1,1135 @@
+Let's Get It Started!
+
+To make your NEORV32 project run, follow the guides from the upcoming sections. Follow these guides
+step by step and in the presented order.
+
+:sectnums:
+== Software Toolchain Setup
+
+To compile (and debug) executables for the NEORV32 a RISC-V toolchain is required.
+There are two possibilities to get this:
+
+1. Download and _build_ the official RISC-V GNU toolchain yourself
+2. Download and install a prebuilt version of the toolchain; this might also done via the package manager / app store of your OS
+
+[TIP]
+The default toolchain prefix for this project is **`riscv32-unknown-elf`**. Of course you can use any other RISC-V
+toolchain (like `riscv64-unknown-elf`) that is capable to emit code for a `rv32` architecture. Just change the _RISCV_TOOLCHAIN_ variable in the application
+makefile(s) according to your needs or define this variable when invoking the makefile.
+
+[IMPORTANT]
+Keep in mind that – for instance – a rv32imc toolchain only provides library code compiled with
+compressed (_C_) and `mul`/`div` instructions (_M_)! Hence, this code cannot be executed (without
+emulation) on an architecture without these extensions!
+
+
+:sectnums:
+=== Building the Toolchain from Scratch
+
+To build the toolchain by yourself you can follow the guide from the official https://github.com/riscv/riscv-gnu-toolchain GitHub page.
+You need to make sure the generated toolchain fits the architecture of the NEORV32 core. To get a toolchain that even supports minimal
+ISA extension configurations, it is recommend to compile for `rv32i` only. Please note that this minimal ISA also provides further ISA
+extensions like `m` or `c`. Of course you can use a `multilib` approach to generate
+toolchains for several target ISAs.
+
+.Configuring GCC build for `rv32i` (minimal ISA)
+[source,bash]
+----
+riscv-gnu-toolchain$ ./configure --prefix=/opt/riscv --with-arch=rv32i –-with-abi=ilp32
+riscv-gnu-toolchain$ make
+----
+
+
+:sectnums:
+=== Downloading and Installing a Prebuilt Toolchain
+
+Alternatively, you can download a prebuilt toolchain.
+
+:sectnums:
+==== Use The Toolchain I have Build
+
+I have compiled a GCC toolchain on a 64-bit x86 Ubuntu (Ubuntu on Windows, actually) and uploaded it to
+GitHub. You can directly download the according toolchain archive as single _zip-file_ within a packed
+release from https://github.com/stnolting/riscv-gcc-prebuilt.
+
+Unpack the downloaded toolchain archive and copy the content to a location in your file system (e.g.
+`/opt/riscv`). More information about downloading and installing my prebuilt toolchains can be found in
+the repository's README.
+
+
+:sectnums:
+==== Use a Third Party Toolchain
+
+Of course you can also use any other prebuilt version of the toolchain. There are a lot  RISC-V GCC packages out there -
+even for Windows. On Linux system you might even be able to fetch a toolchain via your distribution's package manager.
+
+[IMPORTANT]
+Make sure the toolchain can (also) emit code for a `rv32i` architecture, uses the `ilp32` or `ilp32e` ABI and **was not build** using
+CPU extensions that are not supported by the NEORV32 (like `D`).
+
+
+:sectnums:
+=== Installation
+
+Now you have the toolchain binaries. The last step is to add them to your `PATH` environment variable (if you have not
+already done so): make sure to add the _binaries_ folder (`bin`) of your toolchain.
+
+[source,bash]
+----
+$ export PATH:$PATH:/opt/riscv/bin
+----
+
+You should add this command to your `.bashrc` (if you are using bash) to automatically add the RISC-V
+toolchain at every console start.
+
+:sectnums:
+=== Testing the Installation
+
+To make sure everything works fine, navigate to an example project in the NEORV32 example folder and
+execute the following command:
+
+[source,bash]
+----
+neorv32/sw/example/blink_led$ make check
+----
+
+This will test all the tools required for the generating NEORV32 executables.
+Everything is working fine if `Toolchain check OK` appears at the end.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== General Hardware Setup
+
+This guide will setup a NEORV32 project for FPGA implementation (or simulation only) _from scratch_
+
+[TIP]
+If you want to use a complete pre-defined setup to start with, check out the
+project's `setups` folder (https://github.com/stnolting/neorv32/tree/master/setups),
+which provides (script-based) demo setups for various FPGA boards and toolchains.
+
+This tutorial uses a _simplified_ test setup of the processor
+to keeps things simple at the beginning as this setup is intended as
+evaluation or "hello world" project to check out the NEORV32.
+
+[start=1]
+. Create a new project with your FPGA EDA tool of choice.
+. Add all VHDL files from the project's `rtl/core` folder to your project. Make sure to _reference_ the
+files only – do not copy them.
+. Make sure to add all the rtl files to a new library called `neorv32`. If your FPGA tools does not
+provide a field to enter the library name, check out the "properties" menu of the added rtl files.
+. The `rtl/core/neorv32_top.vhd` VHDL file is the top entity of the NEORV32 processor. If you
+already have a design, instantiate this unit into your design and proceed.
+
+[IMPORTANT]
+Make sure to include the `neorv32` package into your design when instantiating the processor: add
+`library neorv32;` and `use neorv32.neorv32_package.all;` to your design unit.
+
+[start=5]
+. If you do not have a design yet and just want to check out the NEORV32 – no problem! This guide
+uses a simplified top entity, that encapsulates the actual processor top entity: add the
+`rtl/templates/processor/neorv32_ProcessorTop_Test.vhd` VHDL file to your project, too, and
+select it as _top entity_.
+. This test setup provides a minimal test hardware setup:
+
+.NEORV32 "hello world" test setup
+image::neorv32_test_setup.png[align=center]
+
+[start=7]
+. It only implements some very basic processor and CPU features. Also, only the
+minimum number of signals is propagated to the outer world.
+. However, a minimal setup-specific configuration of the NEORV32 processor is required to make it run
+on your FPGA board of choice. Only the absolutely required modifications will be made while
+keeping the default configuration for the remaining configuration options:
+
+.Cut-out of `neorv32_ProcessorTop_Test.vhd` showing the processor instance and its configuration
+[source,vhdl]
+----
+neorv32_top_inst: neorv32_top
+generic map (
+  -- General --
+  CLOCK_FREQUENCY   => 100000000, -- in Hz # <1>
+  INT_BOOTLOADER_EN => true,
+  ...
+  -- Internal instruction memory --
+  MEM_INT_IMEM_EN   => true,
+  MEM_INT_IMEM_SIZE => 16*1024, # <2>
+  -- Internal data memory --
+  MEM_INT_DMEM_EN   => true,
+  MEM_INT_DMEM_SIZE => 8*1024, # <3>
+  ...
+----
+<1> Clock frequency of `clk_i` signal in Hertz
+<2> Default size of internal instruction memory: 16kB
+<3> Default size of internal data memory: 8kB
+
+[start=9]
+. There is one generic that has to be set according to your FPGA board setup: the actual clock frequency
+of the top's clock input signal (`clk_i`). Use the _CLOCK_FREQUENC_Y generic to specify your clock source's
+frequency in Hertz (Hz) (note "1").
+. If you feel like it – or if your FPGA does not provide many resources – you can modify the
+**memory sizes** (_MEM_INT_IMEM_SIZE_ and _MEM_INT_DMEM_SIZE_ – marked with notes "2" and "3") or even
+exclude certain ISA extensions and peripheral modules from implementation - but as mentioned above, let's keep things
+simple at first and use the standard configuration for now.
+
+[NOTE]
+If you have changed the default memory configuration (_MEM_INT_IMEM_SIZE_ and _MEM_INT_DMEM_SIZE_ generics)
+keep those new sizes in mind – these values are required for setting
+up the software framework in the next section <<_general_software_framework_setup>>.
+
+[start=11]
+. Depending on your FPGA tool of choice, it is time to assign the signals of the test setup top entity to
+the according pins of your FPGA board. All the signals can be found in the entity declaration:
+
+.Entity signals of `neorv32_test_setup.vhd`
+[source,vhdl]
+----
+entity neorv32_test_setup is
+  port (
+    -- Global control --
+    clk_i       : in std_ulogic := '0'; -- global clock, rising edge
+    rstn_i      : in std_ulogic := '0'; -- global reset, low-active, async
+    -- GPIO --
+    gpio_o      : out std_ulogic_vector(7 downto 0); -- parallel output
+    -- UART0 --
+    uart0_txd_o : out std_ulogic; -- UART0 send data
+    uart0_rxd_i : in std_ulogic := '0' -- UART0 receive data
+);
+end neorv32_test_setup;
+----
+
+[start=12]
+. Attach the clock input `clk_i` to your clock source and connect the reset line `rstn_i` to a button of
+your FPGA board. Check whether it is low-active or high-active – the reset signal of the processor is
+**low-active**, so maybe you need to invert the input signal.
+. If possible, connected at least bit `0` of the GPIO output port `gpio_o` to a high-active LED (invert
+the signal when your LEDs are low-active). This LED will be used as status LED for the setup.
+. Finally, if your FPGA board provides a serial host interface (USB-to-serial converter) interface,
+connect the UART communication signals `uart0_txd_o` and `uart0_rxd_i`.
+. Perform the project HDL compilation (synthesis, mapping, bitstream generation).
+. Program the generated bitstream into your FPGA and press the button connected to the reset signal.
+. Done! The assigned status LED should be flashing now for some sections before permanently lighting up.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== General Software Framework Setup
+
+To allow executables to be _actually executed_ on the NEORV32 Processor the configuration of the software framework
+has to be aware to the hardware configuration. This guide focuses on the memory configuration. To enabled
+certain CPU ISA festures refer to the <<_enabling_risc_v_cpu_extensions>> section.
+
+[TIP]
+If you have **not** changed the _default_ memory configuration in section <<_general_hardware_setup>>
+you are already done and you can skip the rest of this guide.
+
+[start=1]
+. Open the NEORV32 linker script `sw/common/neorv32.ld` with a text editor. Right at the
+beginning of this script you will find the `MEMORY` configuration listing the different memory section:
+
+.Cut-out of the linker script `neorv32.ld`: `ram` memory section configuration
+[source,c]
+----
+MEMORY
+{
+  ram  (rwx) : ORIGIN = 0x80000000, LENGTH = DEFINED(make_bootloader) ? 512 : 8*1024 # <1>
+...
+----
+<1> Size of the data memory address space (right-most value) (internal/external DMEM); here 8kB
+
+[start=2]
+. We only need to change the `ram` section, which presents the available data address space.
+If you have changed the DMEM (_MEM_INT_DMEM_SIZE_ generic) size adapt the `LENGTH` parameter of the `ram`
+section (here: `8*1024`) so it is equal to your DMEM hardware configuration.
+
+[IMPORTANT]
+Make sure you only modify the _right-most_ value (here: 8*1024)! +
+The "`512`" are not relevant for the application.
+
+[start=3]
+. Done! Save your changes and close the linker script.
+
+.Advanced: Section base address and size
+[IMPORTANT]
+More information can be found in the datasheet section https://stnolting.github.io/neorv32/#_address_space[Address Space].
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Application Program Compilation
+
+This guide shows how to compile an example C-code application into a NEORV32 executable that 
+can be uploaded via the bootloader or the on-chip debugger.
+
+[IMPORTANT]
+If your FPGA board does not provide such an interface - don't worry!
+Section <<_installing_an_executable_directly_into_memory>> shows how to
+run custom programs on your FPGA setup without having a UART.
+
+[start=1]
+. Open a terminal console and navigate to one of the project's example programs. For instance, navigate to the
+simple `sw/example_blink_led` example program. This program uses the NEORV32 GPIO module to display
+an 8-bit counter on the lowest eight bit of the `gpio_o` output port.
+. To compile the project and generate an executable simply execute:
+
+[source,bash]
+----
+neorv32/sw/example/blink_led$ make clean_all exe
+----
+
+[start=3]
+. We are using the `clean_all` taret to make sure everything is re-build.
+. This will compile and link the application sources together with all the included libraries. At the end,
+your application is transformed into an ELF file (`main.elf`). The _NEORV32 image generator_ (in `sw/image_gen`)
+takes this file and creates a final executable. The makefile will show the resulting memory utilization and
+the executable size:
+
+[source,bash]
+----
+neorv32/sw/example/blink_led$ make clean_all exe
+Memory utilization:
+   text    data     bss     dec     hex filename
+   3176       0     120    3296     ce0 main.elf
+Compiling ../../../sw/image_gen/image_gen
+Executable (neorv32_exe.bin) size in bytes:
+3188  
+----
+
+[start=5]
+. That's it. The `exe` target has created the actual executable `neorv32_exe.bin` in the current folder
+that is ready to be uploaded to the processor.
+
+[TIP]
+The compilation process will also create a `main.asm` assembly listing file in the current folder, which
+shows the actual assembly code of the application.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Uploading and Starting of a Binary Executable Image via UART
+
+Follow this guide to use the bootloader to upload an executable via UART.
+
+[NOTE]
+This concept uses the default "Indirect Boot" scenario that uses the bootloader to upload new executables.
+See datasheet section https://stnolting.github.io/neorv32/#_indirect_boot[Indirect Boot] for more information.
+
+[IMPORTANT]
+If your FPGA board does not provide such an interface - don't worry!
+Section <<_installing_an_executable_directly_into_memory>> shows how to
+run custom programs on your FPGA setup without having a UART.
+
+[start=1]
+. Connect the primary UART (UART0) interface of your FPGA board to a serial port of your host computer.
+. Start a terminal program. In this tutorial, I am using TeraTerm for Windows. You can download it fore free
+from https://ttssh2.osdn.jp/index.html.en
+
+[NOTE]
+_Any_ terminal program that can connect to a serial port should work. However, make sure the program
+can transfer data in _raw_ byte mode without any protocol overhead around it.
+
+[start=3]
+. Open a connection to the the serial port your UART is connected to. Configure the terminal setting according to the
+following parameters:
+
+* 19200 Baud
+* 8 data bits
+* 1 stop bit
+* no parity bits
+* _no_ transmission/flow control protocol
+* receiver (host computer) newline on `\r\n` (carriage return & newline)
+
+[start=4]
+. Also make sure that single chars are send from your computer _without_ any consecutive "new line" or "carriage
+return" commands (this is highly dependent on your terminal application of choice, TeraTerm only
+sends the raw chars by default).
+. Press the NEORV32 reset button to restart the bootloader. The status LED starts blinking and the
+bootloader intro screen appears in your console. Hurry up and press any key (hit space!) to abort the
+automatic boot sequence and to start the actual bootloader user interface console.
+
+.Bootloader console; aborted auto-boot sequence
+[source,bash]
+----
+<< NEORV32 Bootloader >>
+
+BLDV: Mar 23 2021
+HWV:  0x01050208
+CLK:  0x05F5E100
+USER: 0x10000DE0
+MISA: 0x40901105
+ZEXT: 0x00000023
+PROC: 0x0EFF0037
+IMEM: 0x00004000 bytes @ 0x00000000
+DMEM: 0x00002000 bytes @ 0x80000000
+
+Autoboot in 8s. Press key to abort.
+Aborted.
+
+Available commands:
+h: Help
+r: Restart
+u: Upload
+s: Store to flash
+l: Load from flash
+e: Execute
+CMD:>
+----
+
+[start=6]
+. Execute the "Upload" command by typing `u`. Now the bootloader is waiting for a binary executable to be send.
+
+[source,bash]
+----
+CMD:> u
+Awaiting neorv32_exe.bin...
+----
+
+[start=7]
+. Use the "send file" option of your terminal program to send a NEORV32 executable (`neorv32_exe.bin`).
+. Again, make sure to transmit the executable in raw binary mode (no transfer protocol).
+When using TeraTerm, select the "binary" option in the send file dialog.
+. If everything went fine, OK will appear in your terminal:
+
+[source,bash]
+----
+CMD:> u
+Awaiting neorv32_exe.bin... OK
+----
+
+[start=10]
+. The executable is now in the instruction memory of the processor. To execute the program right
+now run the "Execute" command by typing `e`:
+
+[source,bash]
+----
+CMD:> u
+Awaiting neorv32_exe.bin... OK
+CMD:> e
+Booting...
+Blinking LED demo program
+----
+
+[start=11]
+. If everything went fine, you should see the LEDs blinking.
+
+[NOTE]
+The bootloader will print error codes if something went wrong.
+See section https://stnolting.github.io/neorv32/#_bootloader[Bootloader] of the NEORV32 datasheet for more information.
+
+[TIP]
+See section <<_programming_an_external_spi_flash_via_the_bootloader>> to learn how to use an external SPI
+flash for nonvolatile program storage.
+
+[TIP]
+Executables can also be uploaded via the **on-chip debugger**.
+See section <<_debugging_with_gdb>> for more information.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Installing an Executable Directly Into Memory
+
+If you do not want to use the bootloader (or the on-chip debugger) for executable upload or if your setup does not provide
+a serial interface for that, you can also directly install an application into embedded memory.
+
+This concept uses the "Direct Boot" scenario that implements the processor-internal IMEM as ROM, which is
+pre-initialized with the application's executable during synthesis. Hence, it provides _non-volatile_ storage of the
+executable inside the processor. This storage cannot be altered during runtime and any source code modification of
+the application requires to re-program the FPGA via the bitstream.
+
+[TIP]
+See datasheet section https://stnolting.github.io/neorv32/#_direct_boot[Direct Boot] for more information.
+
+
+
+Using the IMEM as ROM:
+
+* for this boot concept the bootloader is no longer required
+* this concept only works for the internal IMEM (but can be extended to work with external memories coupled via the processor's bus interface)
+* make sure that the memory components (like block RAM) the IMEM is mapped to support an initialization via the bitstream 
+
+[start=1]
+. At first, make sure your processor setup actually implements the internal IMEM: the `MEM_INT_IMEM_EN` generics has to be set to `true`:
+
+.Processor top entity configuration - enable internal IMEM
+[source,vhdl]
+----
+  -- Internal Instruction memory --
+  MEM_INT_IMEM_EN => true, -- implement processor-internal instruction memory
+----
+
+[start=2]
+. For this setup we do not want the bootloader to be implemented at all. Disable implementation of the bootloader by setting the
+`INT_BOOTLOADER_EN` generic to `false`. This will also modify the processor-internal IMEM so it is initialized with the executable during synthesis. 
+
+.Processor top entity configuration - disable internal bootloader
+[source,vhdl]
+----
+  -- General --
+  INT_BOOTLOADER_EN => false, -- boot configuration: false = boot from int/ext (I)MEM
+----
+
+[start=3]
+. To generate an "initialization image" for the IMEM that contains the actual application, run the `install` target when compiling your application:
+
+[source,bash]
+----
+neorv32/sw/example/blink_led$ make clean_all install
+Memory utilization:
+   text    data     bss     dec     hex filename
+   3176       0     120    3296     ce0 main.elf
+Compiling ../../../sw/image_gen/image_gen
+Installing application image to ../../../rtl/core/neorv32_application_image.vhd
+----
+
+[start=4]
+. The `install` target has compiled all the application sources but instead of creating an executable (`neorv32_exe.bit`) that can be uploaded via the
+bootloader, it has created a VHDL memory initialization image `core/neorv32_application_image.vhd`.
+. This VHDL file is automatically copied to the core's rtl folder (`rtl/core`) so it will be included for the next synthesis.
+. Perform a new synthesis. The IMEM will be build as pre-initialized ROM (inferring embedded memories if possible).
+. Upload your bitstream. Your application code now resides unchangeable in the processor's IMEM and is directly executed after reset.
+
+
+The synthesis tool / simulator will print asserts to inform about the (IMEM) memory / boot configuration:
+
+[source]
+----
+NEORV32 PROCESSOR CONFIG NOTE: Boot configuration: Direct boot from memory (processor-internal IMEM).
+NEORV32 PROCESSOR CONFIG NOTE: Implementing processor-internal IMEM as ROM (3176 bytes), pre-initialized with application.
+----
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Setup of a New Application Program Project
+
+[start=1]
+. The easiest way of creating a _new_ software application project is to copy an _existing_ one. This will keep all
+file dependencies. For example you can copy `sw/example/blink_led` to `sw/example/flux_capacitor`.
+. If you want to place you application somewhere outside `sw/example` you need to adapt the application's makefile.
+In the makefile you will find a variable that keeps the relative or absolute path to the NEORV32 repo home
+folder. Just modify this variable according to your new project's home location:
+
+[source,makefile]
+----
+# Relative or absolute path to the NEORV32 home folder (use default if not set by user)
+NEORV32_HOME ?= ../../..
+----
+
+[start=3]
+. If your project contains additional source files outside of the project folder, you can add them to
+the `APP_SRC` variable:
+
+[source,makefile]
+----
+# User's application sources (add additional files here)
+APP_SRC = $(wildcard *.c) ../somewhere/some_file.c
+----
+
+[start=4]
+. You also can add a folder containing your application's include files to the
+`APP_INC` variable (do not forget the `-I` prefix):
+
+[source,makefile]
+----
+# User's application include folders (don't forget the '-I' before each entry)
+APP_INC = -I . -I ../somewhere/include_stuff_folder
+----
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Enabling RISC-V CPU Extensions
+
+Whenever you enable/disable a RISC-V CPU extensions via the according `CPU_EXTENSION_RISCV_x` generic, you need to
+adapt the toolchain configuration so the compiler can actually generate according code for it.
+
+To do so, open the makefile of your project (for example `sw/example/blink_led/makefile`) and scroll to the
+"USER CONFIGURATION" section right at the beginning of the file. You need to modify the `MARCH` variable and eventually
+the `MABI` variable according to your CPU hardware configuration.
+
+[source,makefile]
+----
+# CPU architecture and ABI
+MARCH = -march=rv32i # <1>
+MABI = -mabi=ilp32 # <2>
+----
+<1> MARCH = Machine architecture ("ISA string")
+<2> MABI = Machine binary interface
+
+For example, if you enable the RISC-V `C` extension (16-bit compressed instructions) via the `CPU_EXTENSION_RISCV_C`
+generic (set `true`) you need to add the 'c' extension also to the `MARCH` ISA string in order to make the compiler
+emit compressed instructions.
+
+[WARNING]
+ISA extension enabled in hardware can be a superset of the extensions enabled in software, but not the other way
+around. For example generating compressed instructions for a CPU configuration that has the `c` extension disabled
+will cause _illegal instruction exceptions_ at runtime.
+
+You can also override the default `MARCH` and `MABI` configurations from the makefile when invoking the makefile:
+
+[source,bash]
+----
+$ make MARCH=-march=rv32ic clean_all all
+----
+
+[NOTE]
+The RISC-V ISA string (for _MARCH_) follows a certain _canonical_ structure:
+`rev32[i/e][m][a][f][d][g][q][c][b][v][n]...` For example `rv32imac` is valid while `rv32icma` is not valid.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Customizing the Internal Bootloader
+
+You can either customized the default bootloader via provided configuration options or you can write
+a completely new bootloader that is specialized for your application.
+
+[IMPORTANT]
+Keep in mind that the maximum size for the bootloader is limited to 32kB.
+
+The most important user-defined configuration options of the default bootloader are available as C-language
+`#defines` right at the beginning of the bootloader source code (`sw/bootloader/bootloader.c`):
+
+.Cut-out from the bootloader source code `bootloader.c`: configuration parameters
+[source,c]
+----
+/** UART BAUD rate */
+#define BAUD_RATE (19200)
+/** Enable auto-boot sequence if != 0 */
+#define AUTOBOOT_EN (1)
+/** Time until the auto-boot sequence starts (in seconds) */
+#define AUTOBOOT_TIMEOUT 8
+/** Set to 0 to disable bootloader status LED */
+#define STATUS_LED_EN (1)
+/** SPI_DIRECT_BOOT_EN: Define/uncomment to enable SPI direct boot */
+//#define SPI_DIRECT_BOOT_EN
+/** Bootloader status LED at GPIO output port */
+#define STATUS_LED (0)
+/** SPI flash boot image base address (warning! address might wrap-around!) */
+#define SPI_FLASH_BOOT_ADR (0x00800000)
+/** SPI flash chip select line at spi_csn_o */
+#define SPI_FLASH_CS (0)
+/** Default SPI flash clock prescaler */
+#define SPI_FLASH_CLK_PRSC (CLK_PRSC_8)
+/** SPI flash sector size in bytes (default = 64kb) */
+#define SPI_FLASH_SECTOR_SIZE (64*1024)
+/** ASCII char to start fast executable upload process */
+#define FAST_UPLOAD_CMD '#'
+----
+
+
+:sectnums:
+=== Re-Compiling and Re-Installing the Bootloader
+
+Whenever you have modified the bootloader's C sources you need to recompile and re-install it and
+re-synthesize your design afterwards.
+
+[start=1]
+.Compile and install the bootloader using the explicit `bootloader` makefile target.
+[source,bash]
+----
+neorv32/sw/bootloader$ make clean_all bootloader
+----
+
+.Advanced
+[NOTE]
+You can also use the `bootloader` makefile target for any "normal" application. This will install that application
+directly to the processor's internal boot ROM.
+
+[NOTE]
+The bootloader is intended to work regardless of the actual NEORV32 hardware configuration –
+especially when it comes to CPU ISA extensions. Hence, the bootloader should be compiled using the
+minimal `rv32i` ISA only.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Programming an External SPI Flash via the Bootloader
+
+The default processor-internal NEORV32 bootloader supports automatic booting from an external SPI flash.
+This guide shows how to write an executable to the SPI flash via the bootloader so it can be automatically
+fetched and executed after processor reset.
+
+[TIP]
+The SPI flash requirements are shown in section
+https://stnolting.github.io/neorv32/#_external_spi_flash_for_booting[External SPI Flash for Booting] of the datasheet.
+
+[start=1]
+. At first, reset the NEORV32 processor and wait until the bootloader start screen appears in your terminal program.
+. Abort the auto boot sequence and start the user console by pressing any key.
+. Press u to upload the executable that you want to store to the external flash:
+
+[source]
+----
+CMD:> u
+Awaiting neorv32_exe.bin...
+----
+
+[start=4]
+. Send the binary in raw binary via your terminal program. When the upload is completed and "OK"
+appears, press `p` to trigger the programming of the flash (do not execute the image via the `e`
+command as this might corrupt the image):
+
+[source]
+----
+CMD:> u
+Awaiting neorv32_exe.bin... OK
+CMD:> p
+Write 0x000013FC bytes to SPI flash @ 0x00800000? (y/n)
+----
+
+[start=5]
+. The bootloader shows the size of the executable and the base address inside the SPI flash where the
+executable is going to be stored. A prompt appears: Type `y` to start the programming or type `n` to
+abort.
+
+[TIP]
+Section <<_customizing_the_internal_bootloader>> show the according C-language `define` that can be modified
+to specify the base address of the executable inside the SPI flash.
+
+[source]
+----
+CMD:> u
+Awaiting neorv32_exe.bin... OK
+CMD:> p
+Write 0x000013FC bytes to SPI flash @ 0x00800000? (y/n) y
+Flashing... OK
+CMD:>
+----
+
+[start=6]
+. If "OK" appears in the terminal line, the programming process was successful. Now you can use the
+auto boot sequence to automatically boot your application from the flash at system start-up without
+any user interaction.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Packaging the Processor as IP block for Xilinx Vivado Block Designer
+
+.WORK IN PROGRESS
+[WARNING]
+This Section Is Under Construction! +
+ +
+FIXME!
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Simulating the Processor
+
+.WORK IN PROGRESS
+[WARNING]
+This Section Is Under Construction! +
+ +
+FIXME!
+
+:sectnums:
+=== Testbench
+
+The NEORV32 project features a simple default testbench (`sim/neorv32_tb.simple.vhd`) that can be used to simulate
+and test the processor setup. This testbench features a 100MHz clock and enables all optional peripheral and
+CPU extensions except for the `E` extension and the TRNG IO module (that CANNOT be simulated due to its
+combinatorial (looped) oscillator architecture).
+
+The simulation setup is configured via the "User Configuration" section located right at the beginning of
+the testbench's architecture. Each configuration constant provides comments to explain the functionality.
+
+Besides the actual NEORV32 Processor, the testbench also simulates "external" components that are connected
+to the processor's external bus/memory interface. These components are:
+
+* an external instruction memory (that also allows booting from it)
+* an external data memory
+* an external memory to simulate "external IO devices"
+* a memory-mapped registers to trigger the processor's interrupt signals
+
+The following table shows the base addresses of these four components and their default configuration and
+properties (attributes: `r` = read, `w` = write, `e` = execute, `a` = atomic accesses possible, `8` = byte-accessible, `16` =
+half-word-accessible, `32` = word-accessible).
+
+.Testbench: processor-external memories
+[cols="^4,>3,^5,<11"]
+[options="header",grid="rows"]
+|=======================
+| Base address | Size          | Attributes           | Description
+| `0x00000000` | `imem_size_c` | `r/w/e,  a, 8/16/32` | external IMEM (initialized with application image)
+| `0x80000000` | `dmem_size_c` | `r/w/e,  a, 8/16/32` | external DMEM
+| `0xf0000000` |      64 bytes | `r/w/e, !a, 8/16/32` | external "IO" memory, atomic accesses will fail
+| `0xff000000` |       4 bytes | `-/w/-,  a,  -/-/32` | memory-mapped register to trigger "machine external", "machine software" and "SoC Fast Interrupt" interrupts
+|=======================
+
+The simulated NEORV32 does not use the bootloader and directly boots the current application image (from
+the `rtl/core/neorv32_application_image.vhd` image file). Make sure to use the `all` target of the
+makefile to install your application as VHDL image after compilation:
+
+[source, bash]
+----
+sw/example/blink_led$ make clean_all all
+----
+
+.Simulation-Optimized CPU/Processors Modules
+[NOTE]
+The `sim/rtl_modules` folder provides simulation-optimized versions of certain CPU/processor modules.
+These alternatives can be used to replace the default CPU/processor HDL files to allow faster/easier/more
+efficient simulation. **These files are not intended for synthesis!**
+
+**Simulation Console Output**
+
+Data written to the NEORV32 UART0 / UART1 transmitter is send to a virtual UART receiver implemented
+as part of the testbench. Received chars are send to the simulator console and are also stored to a log file
+(`neorv32.testbench_uart0.out` for UART0, `neorv32.testbench_uart1.out` for UART1) inside the simulator home folder.
+
+
+:sectnums:
+=== Faster Simulation Console Output
+
+When printing data via the UART the communication speed will always be based on the configured BAUD
+rate. For a simulation this might take some time. To have faster output you can enable the **simulation mode**
+or UART0/UART1 (see section https://stnolting.github.io/neorv32/#_primary_universal_asynchronous_receiver_and_transmitter_uart0[Documentation: Primary Universal Asynchronous Receiver and Transmitter (UART0)]).
+
+ASCII data send to UART0 will be immediately printed to the simulator console. Additionally, the
+ASCII data is logged in a file (`neorv32.uart0.sim_mode.text.out`) in the simulator home folder. All
+written 32-bit data is also dumped as 8-char hexadecimal value into a file
+(`neorv32.uart0.sim_mode.data.out`) also in the simulator home folder.
+
+ASCII data send to UART1 will be immediately printed to the simulator console. Additionally, the
+ASCII data is logged in a file (`neorv32.uart1.sim_mode.text.out`) in the simulator home folder. All
+written 32-bit data is also dumped as 8-char hexadecimal value into a file
+(`neorv32.uart1.sim_mode.data.out`) also in the simulator home folder.
+
+You can "automatically" enable the simulation mode of UART0/UART1 when compiling an application. In this case the
+"real" UART0/UART1 transmitter unit is permanently disabled. To enable the simulation mode just compile
+and install your application and add _UART0_SIM_MODE_ for UART0 and/or _UART1_SIM_MODE_ for UART1 to
+the compiler's _USER_FLAGS_ variable (do not forget the `-D` suffix flag):
+
+[source, bash]
+----
+sw/example/blink_led$ make USER_FLAGS+=-DUART0_SIM_MODE clean_all all
+----
+
+The provided define will change the default UART0/UART1 setup function in order to set the simulation mode flag in the according UART's control register.
+
+[NOTE]
+The UART simulation output (to file and to screen) outputs "complete lines" at once. A line is
+completed with a line feed (newline, ASCII `\n` = 10).
+
+
+:sectnums:
+=== Simulation using GHDL
+
+To simulate the processor using _GHDL_ navigate to the `sim` folder and run the provided shell script.
+Any arguments that are provided while executing this script are passed to GHDL.
+For example the simulation time can be set to 20ms using `--stop-time=20ms` as argument.
+
+[source, bash]
+----
+neorv32/sim$ sh ghdl_sim.sh --stop-time=20ms
+----
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Building the Documentation
+
+The documentation (datasheet + user guide) is written using `asciidoc`. The according source files
+can be found in `docs/...`. The documentation of the software framework is written _in-code_ using `doxygen`.
+
+A makefiles in the project's root directory is provided to build all of the documentation as HTML pages
+or as PDF documents.
+
+[TIP]
+Pre-rendered PDFs are available online as _nightly pre-releases_: https://github.com/stnolting/neorv32/releases.
+The HTML-based documentation is also available online at the project's https://stnolting.github.io/neorv32/[GitHub Pages].
+
+The makefile provides a help target to show all available build options and their according outputs.
+
+[source,bash]
+----
+neorv32$ make help
+----
+
+.Example: Generate HTML documentation (data sheet) using `asciidoctor`
+[source,bash]
+----
+neorv32$ make html
+----
+
+[TIP]
+If you don't have `asciidoctor` / `asciidoctor-pdf` installed, you can still generate all the documentation using
+a _docker container_ via `make container`.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== FreeRTOS Support
+
+A NEORV32-specific port and a simple demo for FreeRTOS (https://github.com/FreeRTOS/FreeRTOS) are
+available in the `sw/example/demo_freeRTOS` folder. See the according documentation (`sw/example/demo_freeRTOS/README.md`)
+for more information.
+
+
+
+// ####################################################################################################################
+:sectnums:
+== RISC-V Architecture Test Framework
+
+The NEORV32 Processor passes the according tests provided by the official RISC-V Architecture Test Suite
+(V2.0+), which is available online at GitHub: https://github.com/riscv/riscv-arch-test
+
+All files required for executing the test framework on a simulated instance of the processor (including port
+files) are located in the `riscv-arch-test` folder in the root directory of the NEORV32 repository. Take a
+look at the provided `riscv-arch-test/README.md` (https://github.com/stnolting/neorv32/blob/master/riscv-arch-test/README.md[online at GitHub])
+file for more information on how to run the tests and how testing is conducted in detail.
+
+
+
+<<<
+// ####################################################################################################################
+:sectnums:
+== Debugging using the On-Chip Debugger
+
+The NEORV32 on-chip debugger allows _online_ in-system debugging via an external JTAG access port from a
+host machine. The general flow is independent of the host machine's operating system. However, this tutorial uses
+Windows and Linux (Ubuntu on Windows) in parallel.
+
+[TIP]
+See datasheet section https://stnolting.github.io/neorv32/#_on_chip_debugger_ocd[On Chip Debugger (OCD)]
+for more information.
+
+[NOTE]
+This tutorial uses `gdb` to **directly upload an executable** to the processor. If you are using the default
+processor setup _with_ internal instruction memory (IMEM) make sure it is implemented as RAM
+(_INT_BOOTLOADER_EN_ generic = true).
+
+
+:sectnums:
+=== Hardware Requirements
+
+Make sure the on-chip debugger of your NEORV32 setups is implemented (_ON_CHIP_DEBUGGER_EN_ generic = true).
+Connect a JTAG adapter to the NEORV32 `jtag_*` interface signals. If you do not have a full-scale JTAG adapter, you can
+also use a FTDI-based adapter like the "FT2232H-56Q Mini Module", which is a simple and inexpensive FTDI breakout board.
+
+.JTAG pin mapping
+[cols="^3,^2,^2"]
+[options="header",grid="rows"]
+|=======================
+| NEORV32 top signal | JTAG signal | FTDI port
+| `jtag_tck_i`       | TCK         | D0
+| `jtag_tdi_i`       | TDI         | D1
+| `jtag_tdo_o`       | TDO         | D2
+| `jtag_tms_i`       | TMS         | D3
+| `jtag_trst_i`      | TRST        | D4
+|=======================
+
+[TIP]
+The low-active JTAG _test reset_ (TRST) signals is _optional_ as a reset can also be triggered via the TAP controller.
+If TRST is not used make sure to pull the signal _high_.
+
+
+:sectnums:
+=== OpenOCD
+
+The NEORV32 on-chip debugger can be accessed using the https://github.com/riscv/riscv-openocd[RISC-V port of OpenOCD].
+Prebuilt binaries can be obtained - for example - from https://www.sifive.com/software[SiFive]. A pre-configured
+OpenOCD configuration file (`sw/openocd/openocd_neorv32.cfg`) is available that allows easy access to the NEORV32 CPU.
+
+[NOTE]
+You might need to adapt `ftdi_vid_pid`, `ftdi_channel` and `ftdi_layout_init` in `sw/openocd/openocd_neorv32.cfg`
+according to your interface chip and your operating system.
+
+[TIP]
+If you want to modify the JTAG clock speed (via `adapter speed` in `sw/openocd/openocd_neorv32.cfg`) make sure to meet
+the clock requirements noted in https://stnolting.github.io/neorv32/#_debug_module_dm[Documentation: Debug Transport Module (DTM)].
+
+To access the processor using OpenOCD, open a terminal and start OpenOCD with the pre-configured configuration file.
+
+.Connecting via OpenOCD (on Windows)
+[source, bash]
+--------------------------
+N:\Projects\neorv32\sw\openocd>openocd -f openocd_neorv32.cfg
+Open On-Chip Debugger 0.11.0-rc1+dev (SiFive OpenOCD 0.10.0-2020.12.1)
+Licensed under GNU GPL v2
+For bug reports:
+        https://github.com/sifive/freedom-tools/issues
+1
+Info : Listening on port 6666 for tcl connections
+Info : Listening on port 4444 for telnet connections
+Info : clock speed 1000 kHz
+Info : JTAG tap: neorv32.cpu tap/device found: 0x0cafe001 (mfg: 0x000 (<invalid>), part: 0xcafe, ver: 0x0)
+Info : datacount=1 progbufsize=2
+Info : Disabling abstract command reads from CSRs.
+Info : Examined RISC-V core; found 1 harts
+Info :  hart 0: XLEN=32, misa=0x40801105
+Info : starting gdb server for neorv32.cpu.0 on 3333
+Info : Listening on port 3333 for gdb connections
+--------------------------
+
+OpenOCD has successfully connected to the NEORV32 on-chip debugger and has examined the CPU (showing the content of
+the `misa` CSRs). Now you can use `gdb` to connect via port 3333.
+
+
+:sectnums:
+=== Debugging with GDB
+
+This guide uses the simple "blink example" from `sw/example/blink_led` as simplified test application to
+show the basics of in-system debugging.
+
+At first, the application needs to be compiled. We will use the minimal machine architecture configuration
+(`rv32i`) here to be independent of the actual processor/CPU configuration.
+Navigate to `sw/example/blink_led` and compile the application:
+
+.Compile the test application
+[source, bash]
+--------------------------
+.../neorv32/sw/example/blink_led$ make MARCH=-march=rv32i clean_all all
+--------------------------
+
+This will generate an ELF file `main.elf` that contains all the symbols required for debugging.
+Furthermore, an assembly listing file `main.asm` is generated that we will use to define breakpoints.
+
+Open another terminal in `sw/example/blink_led` and start `gdb`.
+The GNU debugger is part of the toolchain (see <<_software_toolchain_setup>>).
+
+.Starting GDB (on Linux (Ubuntu on Windows))
+[source, bash]
+--------------------------
+.../neorv32/sw/example/blink_led$ riscv32-unknown-elf-gdb
+GNU gdb (GDB) 10.1
+Copyright (C) 2020 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Type "show copying" and "show warranty" for details.
+This GDB was configured as "--host=x86_64-pc-linux-gnu --target=riscv32-unknown-elf".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<https://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+    <http://www.gnu.org/software/gdb/documentation/>.
+
+For help, type "help".
+Type "apropos word" to search for commands related to "word".
+(gdb)
+--------------------------
+
+Now connect to OpenOCD using the default port 3333 on your local machine.
+Set the ELF file we want to debug to the recently generated `main.elf` from the `blink_led` example.
+Finally, upload the program to the processor.
+
+[NOTE]
+The executable that is uploaded to the processor is **not** the default NEORV32 executable (`neorv32_exe.bin`) that
+is used for uploading via the bootloader. Instead, all the required sections (like `.text`) are extracted from `mail.elf`
+by GDB and uploaded via the debugger's indirect memory access.
+
+.Running GDB
+[source, bash]
+--------------------------
+(gdb) target remote localhost:3333 <1>
+Remote debugging using localhost:3333
+warning: No executable has been specified and target does not support
+determining executable automatically.  Try using the "file" command.
+0xffff0c94 in ?? () <2>
+(gdb) file main.elf <3>
+A program is being debugged already.
+Are you sure you want to change the file? (y or n) y
+Reading symbols from main.elf...
+(gdb) load <4>
+Loading section .text, size 0xd0c lma 0x0
+Loading section .rodata, size 0x39c lma 0xd0c
+Start address 0x00000000, load size 4264
+Transfer rate: 43 KB/sec, 2132 bytes/write.
+(gdb)
+--------------------------
+<1> Connect to OpenOCD
+<2> The CPU was still executing code from the bootloader ROM - but that does not matter here
+<3> Select `mail.elf` from the `blink_led` example
+<4> Upload the executable
+
+After the upload, GDB will make the processor jump to the beginning of the uploaded executable
+(by default, this is the beginning of the instruction memory at `0x00000000`) skipping the bootloader
+and halting the CPU right before executing the `blink_led` application.
+
+
+:sectnums:
+==== Breakpoint Example
+
+The following steps are just a small showcase that illustrate a simple debugging scheme.
+
+While compiling `blink_led`, an assembly listing file `main.asm` was generated.
+Open this file with a text editor to check out what the CPU is going to do when resumed.
+
+The `blink_led` example implements a simple counter on the 8 lowest GPIO output ports. The program uses
+"busy wait" to have a visible delay between increments. This waiting is done by calling the `neorv32_cpu_delay_ms`
+function. We will add a _breakpoint_ right at the end of this wait function so we can step through the iterations
+of the counter.
+
+.Cut-out from `main.asm` generated from the `blink_led` example
+[source, assembly]
+--------------------------
+00000688 <__neorv32_cpu_delay_ms_end>:
+ 688:	01c12083          	lw	ra,28(sp)
+ 68c:	02010113          	addi	sp,sp,32
+ 690:	00008067          	ret
+--------------------------
+
+The very last instruction of the `neorv32_cpu_delay_ms` function is `ret` (= return)
+at hexadecimal `690` in this example. Add this address as _breakpoint_ to GDB.
+
+[NOTE]
+The address might be different if you use a different version of the software framework or
+if different ISA options are configured.
+
+.Adding a GDB breakpoint
+[source, bash]
+--------------------------
+(gdb) b * 0x690
+Breakpoint 1 at 0x690
+--------------------------
+
+Now execute `c` (= continue). The CPU will resume operation until it hits the break-point.
+By this we can "step" from increment to increment.
+
+.Iterating from breakpoint to breakpoint
+[source, bash]
+--------------------------
+Breakpoint 1 at 0x690
+(gdb) c
+Continuing.
+
+Breakpoint 1, 0x00000690 in neorv32_cpu_delay_ms ()
+(gdb) c
+Continuing.
+
+Breakpoint 1, 0x00000690 in neorv32_cpu_delay_ms ()
+(gdb) c
+Continuing.
+--------------------------
+
+include::../legal.adoc[]

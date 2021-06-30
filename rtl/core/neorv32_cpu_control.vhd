@@ -49,10 +49,10 @@ entity neorv32_cpu_control is
   generic (
     -- General --
     HW_THREAD_ID                 : natural := 0;     -- hardware thread id (32-bit)
-    CPU_BOOT_ADDR                : std_ulogic_vector(31 downto 0):= x"00000000"; -- cpu boot address
+    CPU_BOOT_ADDR                : std_ulogic_vector(31 downto 0) := x"00000000"; -- cpu boot address
+    CPU_DEBUG_ADDR               : std_ulogic_vector(31 downto 0) := x"00000000"; -- cpu debug mode start address
     -- RISC-V CPU Extensions --
     CPU_EXTENSION_RISCV_A        : boolean := false; -- implement atomic extension?
-    CPU_EXTENSION_RISCV_B        : boolean := false; -- implement bit manipulation extensions?
     CPU_EXTENSION_RISCV_C        : boolean := false; -- implement compressed extension?
     CPU_EXTENSION_RISCV_E        : boolean := false; -- implement embedded RF extension?
     CPU_EXTENSION_RISCV_M        : boolean := false; -- implement muld/div extension?
@@ -60,6 +60,7 @@ entity neorv32_cpu_control is
     CPU_EXTENSION_RISCV_Zfinx    : boolean := false; -- implement 32-bit floating-point extension (using INT reg!)
     CPU_EXTENSION_RISCV_Zicsr    : boolean := true;  -- implement CSR system?
     CPU_EXTENSION_RISCV_Zifencei : boolean := false; -- implement instruction stream sync.?
+    CPU_EXTENSION_RISCV_DEBUG    : boolean := false; -- implement CPU debug mode?
     -- Extension Options --
     CPU_CNT_WIDTH                : natural := 64; -- total width of CPU cycle and instret counters (0..64)
     -- Physical memory protection (PMP) --
@@ -67,7 +68,7 @@ entity neorv32_cpu_control is
     PMP_MIN_GRANULARITY          : natural := 64*1024; -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
     -- Hardware Performance Monitors (HPM) --
     HPM_NUM_CNTS                 : natural := 0;     -- number of implemented HPM counters (0..29)
-    HPM_CNT_WIDTH                : natural := 40     -- total size of HPM counters (1..64)
+    HPM_CNT_WIDTH                : natural := 40     -- total size of HPM counters (0..64)
   );
   port (
     -- global control --
@@ -75,7 +76,7 @@ entity neorv32_cpu_control is
     rstn_i        : in  std_ulogic; -- global reset, low-active, async
     ctrl_o        : out std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
     -- status input --
-    alu_wait_i    : in  std_ulogic; -- wait for ALU
+    alu_idone_i   : in  std_ulogic; -- ALU iterative operation done
     bus_i_wait_i  : in  std_ulogic; -- wait for bus
     bus_d_wait_i  : in  std_ulogic; -- wait for bus
     excl_state_i  : in  std_ulogic; -- atomic/exclusive access lock status
@@ -90,8 +91,9 @@ entity neorv32_cpu_control is
     curr_pc_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- current PC (corresponding to current instruction)
     csr_rdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
     -- FPU interface --
-    fpu_rm_o      : out std_ulogic_vector(02 downto 0); -- rounding mode
     fpu_flags_i   : in  std_ulogic_vector(04 downto 0); -- exception flags
+    -- debug mode (halt) request --
+    db_halt_req_i : in  std_ulogic;
     -- non-maskable interrupt --
     nm_irq_i      : in  std_ulogic;
     -- interrupts (risc-v compliant) --
@@ -190,14 +192,12 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
 
   -- instruction decoding helper logic --
   type decode_aux_t is record
-    alu_immediate   : std_ulogic;
-    rs1_is_r0       : std_ulogic;
-    is_atomic_lr    : std_ulogic;
-    is_atomic_sc    : std_ulogic;
-    is_bitmanip_imm : std_ulogic;
-    is_bitmanip_reg : std_ulogic;
-    is_float_op     : std_ulogic;
-    sys_env_cmd     : std_ulogic_vector(11 downto 0);
+    alu_immediate : std_ulogic;
+    rs1_is_r0     : std_ulogic;
+    is_atomic_lr  : std_ulogic;
+    is_atomic_sc  : std_ulogic;
+    is_float_op   : std_ulogic;
+    sys_env_cmd   : std_ulogic_vector(11 downto 0);
   end record;
   signal decode_aux : decode_aux_t;
 
@@ -215,8 +215,6 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     --
     is_ci        : std_ulogic; -- current instruction is de-compressed instruction
     is_ci_nxt    : std_ulogic;
-    is_cp_op     : std_ulogic; -- current instruction is a co-processor operation
-    is_cp_op_nxt : std_ulogic;
     --
     branch_taken : std_ulogic; -- branch condition fulfilled
     pc           : std_ulogic_vector(data_width_c-1 downto 0); -- actual PC, corresponding to current executed instruction
@@ -242,8 +240,10 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     exc_ack       : std_ulogic; -- acknowledge all exceptions
     irq_ack       : std_ulogic_vector(interrupt_width_c-1 downto 0); -- acknowledge specific interrupt
     irq_ack_nxt   : std_ulogic_vector(interrupt_width_c-1 downto 0);
-    cause         : std_ulogic_vector(5 downto 0); -- trap ID for mcause CSR
-    cause_nxt     : std_ulogic_vector(5 downto 0);
+    cause         : std_ulogic_vector(6 downto 0); -- trap ID for mcause CSR
+    cause_nxt     : std_ulogic_vector(6 downto 0);
+    db_irq_fire   : std_ulogic; -- set if there is a valid IRQ source in the "enter debug mode" trap buffer
+    db_irq_en     : std_ulogic; -- set if IRQs are allowed in debu mode
     --
     env_start     : std_ulogic; -- start trap handler env
     env_start_ack : std_ulogic; -- start of trap handler acknowledged
@@ -268,10 +268,10 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
   type pmp_addr_t     is array (0 to PMP_NUM_REGIONS-1) of std_ulogic_vector(data_width_c-1 downto 0);
   type pmp_ctrl_rd_t  is array (0 to 63) of std_ulogic_vector(7 downto 0);
   type mhpmevent_t    is array (0 to HPM_NUM_CNTS-1) of std_ulogic_vector(hpmcnt_event_size_c-1 downto 0);
-  type mhpmcnt_t      is array (0 to HPM_NUM_CNTS-1) of std_ulogic_vector(32 downto 0); -- 32-bit, plus 1-bit overflow
-  type mhpmcnth_t     is array (0 to HPM_NUM_CNTS-1) of std_ulogic_vector(31 downto 0); -- 32-bit
+  type mhpmcnt_t      is array (0 to HPM_NUM_CNTS-1) of std_ulogic_vector(31 downto 0);
+  type mhpmcnt_nxt_t  is array (0 to HPM_NUM_CNTS-1) of std_ulogic_vector(32 downto 0);
+  type mhpmcnt_ovfl_t is array (0 to HPM_NUM_CNTS-1) of std_ulogic_vector(0 downto 0);
   type mhpmcnt_rd_t   is array (0 to 29) of std_ulogic_vector(31 downto 0);
-  type mhpmcnth_rd_t  is array (0 to 29) of std_ulogic_vector(31 downto 0);
   type csr_t is record
     addr              : std_ulogic_vector(11 downto 0); -- csr address
     we                : std_ulogic; -- csr write enable
@@ -293,13 +293,13 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     mcounteren_cy     : std_ulogic; -- mcounteren.cy: allow cycle[h] access from user-mode
     mcounteren_tm     : std_ulogic; -- mcounteren.tm: allow time[h] access from user-mode
     mcounteren_ir     : std_ulogic; -- mcounteren.ir: allow instret[h] access from user-mode
-    mcounteren_hpm    : std_ulogic_vector(HPM_NUM_CNTS-1 downto 0); -- mcounteren.hpmx: allow mhpmcounterx[h] access from user-mode
     --
     mcountinhibit_cy  : std_ulogic; -- mcounterinhibit.cy: enable auto-increment for [m]cycle[h]
     mcountinhibit_ir  : std_ulogic; -- mcounterinhibit.ir: enable auto-increment for [m]instret[h]
     mcountinhibit_hpm : std_ulogic_vector(HPM_NUM_CNTS-1 downto 0); -- mcounterinhibit.hpm3: enable auto-increment for mhpmcounterx[h]
     --
     privilege         : std_ulogic_vector(1 downto 0); -- hart's current privilege mode
+    privilege_rd      : std_ulogic_vector(1 downto 0); -- hart's current privilege mode (effective)
     priv_m_mode       : std_ulogic; -- CPU in M-mode
     priv_u_mode       : std_ulogic; -- CPU in u-mode
     --
@@ -312,15 +312,21 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     --
     mscratch          : std_ulogic_vector(data_width_c-1 downto 0); -- mscratch: scratch register (R/W)
     --
-    mcycle            : std_ulogic_vector(32 downto 0); -- mcycle (R/W), plus carry bit
-    minstret          : std_ulogic_vector(32 downto 0); -- minstret (R/W), plus carry bit
+    mcycle            : std_ulogic_vector(31 downto 0); -- mcycle (R/W)
+    mcycle_nxt        : std_ulogic_vector(32 downto 0);
+    mcycle_ovfl       : std_ulogic_vector(00 downto 0); -- counter low-to-high-word overflow
     mcycleh           : std_ulogic_vector(31 downto 0); -- mcycleh (R/W)
+    minstret          : std_ulogic_vector(31 downto 0); -- minstret (R/W)
+    minstret_nxt      : std_ulogic_vector(32 downto 0);
+    minstret_ovfl     : std_ulogic_vector(00 downto 0); -- counter low-to-high-word overflow
     minstreth         : std_ulogic_vector(31 downto 0); -- minstreth (R/W)
     --
     mhpmcounter       : mhpmcnt_t; -- mhpmcounter* (R/W), plus carry bit
-    mhpmcounterh      : mhpmcnth_t; -- mhpmcounter*h (R/W)
+    mhpmcounter_nxt   : mhpmcnt_nxt_t;
+    mhpmcounter_ovfl  : mhpmcnt_ovfl_t; -- counter low-to-high-word overflow
+    mhpmcounterh      : mhpmcnt_t; -- mhpmcounter*h (R/W)
     mhpmcounter_rd    : mhpmcnt_rd_t; -- mhpmcounter* (R/W): actual read data
-    mhpmcounterh_rd   : mhpmcnth_rd_t; -- mhpmcounter*h (R/W): actual read data
+    mhpmcounterh_rd   : mhpmcnt_rd_t; -- mhpmcounter*h (R/W): actual read data
     --
     pmpcfg            : pmp_ctrl_t; -- physical memory protection - configuration registers
     pmpcfg_rd         : pmp_ctrl_rd_t; -- physical memory protection - actual read data
@@ -328,13 +334,35 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     --
     frm               : std_ulogic_vector(02 downto 0); -- frm (R/W): FPU rounding mode
     fflags            : std_ulogic_vector(04 downto 0); -- fflags (R/W): FPU exception flags
+    --
+    dcsr_ebreakm      : std_ulogic; -- dcsr.ebreakm (R/W): behavior of ebreak instruction on m-mode
+    dcsr_ebreaku      : std_ulogic; -- dcsr.ebreaku (R/W): behavior of ebreak instruction on u-mode
+    dcsr_step         : std_ulogic; -- dcsr.step (R/W): single-step mode
+    dcsr_prv          : std_ulogic_vector(01 downto 0); -- dcsr.prv (R/W): current privilege level when entering debug mode
+    dcsr_cause        : std_ulogic_vector(02 downto 0); -- dcsr.cause (R/-): why was debug mode entered
+    dcsr_rd           : std_ulogic_vector(data_width_c-1 downto 0); -- dcsr (R/(W)): debug mode control and status register
+    dpc               : std_ulogic_vector(data_width_c-1 downto 0); -- dpc (R/W): debug mode program counter
+    dscratch0         : std_ulogic_vector(data_width_c-1 downto 0); -- dscratch0 (R/W): debug mode scratch register 0
   end record;
   signal csr : csr_t;
 
-  -- counter low-to-high-word carry --
-  signal mcycle_msb      : std_ulogic;
-  signal minstret_msb    : std_ulogic;
-  signal mhpmcounter_msb : std_ulogic_vector(HPM_NUM_CNTS-1 downto 0);
+  -- debug mode controller --
+  type debug_ctrl_state_t is (DEBUG_OFFLINE, DEBUG_PENDING, DEBUG_ONLINE, DEBUG_EXIT);
+  type debug_ctrl_t is record
+    state        : debug_ctrl_state_t;
+    -- decoded state --
+    running      : std_ulogic; -- debug mode active
+    pending      : std_ulogic; -- waiting to start debug mode
+    -- entering triggers --
+    trig_break   : std_ulogic; -- ebreak instruction
+    trig_halt    : std_ulogic; -- external request
+    trig_step    : std_ulogic; -- single-stepping mode
+    -- leave debug mode --
+    dret         : std_ulogic; -- executed DRET instruction
+    -- misc --
+    ext_halt_req : std_ulogic_vector(1 downto 0); -- rising edge detector for external halt request
+  end record;
+  signal debug_ctrl : debug_ctrl_t;
 
   -- (hpm) counter events --
   signal cnt_event, cnt_event_nxt : std_ulogic_vector(hpmcnt_event_size_c-1 downto 0);
@@ -690,7 +718,6 @@ begin
       execute_engine.state_prev <= SYS_WAIT;
       execute_engine.i_reg      <= (others => def_rst_val_c);
       execute_engine.is_ci      <= def_rst_val_c;
-      execute_engine.is_cp_op   <= def_rst_val_c;
       execute_engine.last_pc    <= (others => def_rst_val_c);
       execute_engine.i_reg_last <= (others => def_rst_val_c);
       execute_engine.next_pc    <= (others => def_rst_val_c);
@@ -715,19 +742,39 @@ begin
       execute_engine.state_prev <= execute_engine.state;
       execute_engine.i_reg      <= execute_engine.i_reg_nxt;
       execute_engine.is_ci      <= execute_engine.is_ci_nxt;
-      execute_engine.is_cp_op   <= execute_engine.is_cp_op_nxt;
+
       -- PC & IR of "last executed" instruction --
       if (execute_engine.state = EXECUTE) then
         execute_engine.last_pc    <= execute_engine.pc;
         execute_engine.i_reg_last <= execute_engine.i_reg;
       end if;
+
       -- next PC --
       case execute_engine.state is
-        when TRAP_ENTER => execute_engine.next_pc <= csr.mtvec(data_width_c-1 downto 1) & '0'; -- trap enter
-        when TRAP_EXIT  => execute_engine.next_pc <= csr.mepc(data_width_c-1 downto 1) & '0'; -- trap exit
-        when EXECUTE    => execute_engine.next_pc <= std_ulogic_vector(unsigned(execute_engine.pc) + unsigned(execute_engine.next_pc_inc)); -- next linear PC
-        when others     => NULL;
+        when TRAP_ENTER =>
+          if (CPU_EXTENSION_RISCV_DEBUG = false) then -- normal trapping
+            execute_engine.next_pc <= csr.mtvec(data_width_c-1 downto 1) & '0'; -- trap enter
+          else -- DEBUG MODE enabled
+            if (trap_ctrl.cause(5) = '1') then -- trap cause: debug mode (re-)entry
+              execute_engine.next_pc <= CPU_DEBUG_ADDR; -- debug mode enter; start at "parking loop" <normal_entry>
+            elsif (debug_ctrl.running = '1') then -- any other exception INSIDE debug mode
+              execute_engine.next_pc <= std_ulogic_vector(unsigned(CPU_DEBUG_ADDR) + 4); -- execute at "parking loop" <exception_entry>
+            else -- normal trapping
+              execute_engine.next_pc <= csr.mtvec(data_width_c-1 downto 1) & '0'; -- trap enter
+            end if;
+          end if;
+        when TRAP_EXIT =>
+          if (CPU_EXTENSION_RISCV_DEBUG = false) or (debug_ctrl.running = '0') then -- normal end of trap
+            execute_engine.next_pc <= csr.mepc(data_width_c-1 downto 1) & '0'; -- trap exit
+          else -- DEBUG MODE exiting
+            execute_engine.next_pc <= csr.dpc(data_width_c-1 downto 1) & '0'; -- debug mode exit
+          end if;
+        when EXECUTE =>
+          execute_engine.next_pc <= std_ulogic_vector(unsigned(execute_engine.pc) + unsigned(execute_engine.next_pc_inc)); -- next linear PC
+        when others =>
+          NULL;
       end case;
+
       -- main control bus --
       ctrl <= ctrl_nxt;
     end if;
@@ -746,12 +793,12 @@ begin
 
   -- CPU Control Bus Output -----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  ctrl_output: process(ctrl, fetch_engine, trap_ctrl, bus_fast_ir, execute_engine, csr)
+  ctrl_output: process(ctrl, fetch_engine, trap_ctrl, bus_fast_ir, execute_engine, csr, debug_ctrl)
   begin
     -- signals from execute engine --
     ctrl_o <= ctrl;
     -- current privilege level --
-    ctrl_o(ctrl_priv_lvl_msb_c downto ctrl_priv_lvl_lsb_c) <= csr.privilege;
+    ctrl_o(ctrl_priv_lvl_msb_c downto ctrl_priv_lvl_lsb_c) <= csr.privilege_rd;
     -- register addresses --
     ctrl_o(ctrl_rf_rs1_adr4_c downto ctrl_rf_rs1_adr0_c) <= execute_engine.i_reg(instr_rs1_msb_c downto instr_rs1_lsb_c);
     ctrl_o(ctrl_rf_rs2_adr4_c downto ctrl_rf_rs2_adr0_c) <= execute_engine.i_reg(instr_rs2_msb_c downto instr_rs2_lsb_c);
@@ -774,6 +821,13 @@ begin
     -- cpu status --
     ctrl_o(ctrl_sleep_c) <= execute_engine.sleep; -- cpu is in sleep mode
     ctrl_o(ctrl_trap_c)  <= trap_ctrl.env_start_ack; -- cpu is starting a trap handler
+    if (CPU_EXTENSION_RISCV_DEBUG = true) then
+      ctrl_o(ctrl_debug_running_c) <= debug_ctrl.running; -- cpu is currently in debug mode
+    else
+      ctrl_o(ctrl_debug_running_c) <= '0';
+    end if;
+    -- FPU rounding mode --
+    ctrl_o(ctrl_alu_frm2_c downto ctrl_alu_frm0_c) <= csr.frm;
   end process ctrl_output;
 
 
@@ -783,71 +837,22 @@ begin
     variable sys_env_cmd_mask_v : std_ulogic_vector(11 downto 0);
   begin
     -- defaults --
-    decode_aux.alu_immediate   <= '0';
-    decode_aux.rs1_is_r0       <= '0';
-    decode_aux.is_atomic_lr    <= '0';
-    decode_aux.is_atomic_sc    <= '0';
-    decode_aux.is_bitmanip_imm <= '0';
-    decode_aux.is_bitmanip_reg <= '0';
-    decode_aux.is_float_op     <= '0';
+    decode_aux.alu_immediate <= '0';
+    decode_aux.rs1_is_r0     <= '0';
+    decode_aux.is_atomic_lr  <= '0';
+    decode_aux.is_atomic_sc  <= '0';
+    decode_aux.is_float_op   <= '0';
 
     -- is immediate ALU operation? --
     decode_aux.alu_immediate <= not execute_engine.i_reg(instr_opcode_msb_c-1);
 
     -- is rs1 == r0? --
-    decode_aux.rs1_is_r0 <= not or_all_f(execute_engine.i_reg(instr_rs1_msb_c downto instr_rs1_lsb_c));
+    decode_aux.rs1_is_r0 <= not or_reduce_f(execute_engine.i_reg(instr_rs1_msb_c downto instr_rs1_lsb_c));
 
     -- is atomic load-reservate/store-conditional? --
     if (CPU_EXTENSION_RISCV_A = true) and (execute_engine.i_reg(instr_opcode_lsb_c+3 downto instr_opcode_lsb_c+2) = "11") then -- valid atomic sub-opcode
       decode_aux.is_atomic_lr <= not execute_engine.i_reg(instr_funct5_lsb_c);
       decode_aux.is_atomic_sc <=     execute_engine.i_reg(instr_funct5_lsb_c);
-    end if;
-
-    -- is BITMANIP instruction? --
-    -- pretty complex as we have to extract this from the ALU/ALUI instruction space --
-    -- immediate operation --
-    if ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0110000") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001") and
-         (
-          (execute_engine.i_reg(instr_funct12_lsb_c+4 downto instr_funct12_lsb_c) = "00000") or -- CLZ
-          (execute_engine.i_reg(instr_funct12_lsb_c+4 downto instr_funct12_lsb_c) = "00001") or -- CTZ
-          (execute_engine.i_reg(instr_funct12_lsb_c+4 downto instr_funct12_lsb_c) = "00010") or -- PCNT
-          (execute_engine.i_reg(instr_funct12_lsb_c+4 downto instr_funct12_lsb_c) = "00100") or -- SEXT.B
-          (execute_engine.i_reg(instr_funct12_lsb_c+4 downto instr_funct12_lsb_c) = "00101")    -- SEXT.H
-         )
-       ) or
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "01001") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001")) or -- SBCLRI
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "00101") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001")) or -- SBSETI
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "01101") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001")) or -- SBINVI
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "01001") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "101")) or -- SBEXTI
-       --
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "01100") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "101")) or -- RORI
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "00101") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "101") and (execute_engine.i_reg(instr_imm12_lsb_c+6 downto instr_imm12_lsb_c) = "0000111")) or -- GORCI.b 7 (orc.b)
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c+2) = "01101") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "101") and (execute_engine.i_reg(instr_imm12_lsb_c+6 downto instr_imm12_lsb_c) = "0011000")) then -- GREVI.-8 (rev8)
-      decode_aux.is_bitmanip_imm <= '1';
-    end if;
-    -- register operation --
-    if ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0110000") and (execute_engine.i_reg(instr_funct3_msb_c-1 downto instr_funct3_lsb_c) = "01")) or -- ROR / ROL
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0000101") and (execute_engine.i_reg(instr_funct3_msb_c) = '1')) or -- MIN[U] / MAX[U]
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0000100") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "100")) or -- PACK
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0100000") and
-        (
-         (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "111") or -- ANDN
-         (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "110") or -- ORN
-         (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "100")    -- XORN
-         )
-        ) or
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0010000") and
-        (
-         (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "010") or -- SH1ADD
-         (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "100") or -- SH2ADD
-         (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "110")    -- SH3ADD
-         )
-        ) or
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0100100") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001")) or -- SBCLR
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0010100") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001")) or -- SBSET
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0110100") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "001")) or -- SBINV
-       ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0100100") and (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = "101")) then -- SBSEXT
-      decode_aux.is_bitmanip_reg <= '1';
     end if;
 
     -- floating-point operations (Zfinx) --
@@ -863,21 +868,20 @@ begin
     end if;
 
     -- system/environment instructions --
-    sys_env_cmd_mask_v := funct12_ecall_c or funct12_ebreak_c or funct12_mret_c or funct12_wfi_c; -- sum-up set bits
-    decode_aux.sys_env_cmd(11 downto 0) <= execute_engine.i_reg(instr_funct12_msb_c downto instr_funct12_lsb_c) and sys_env_cmd_mask_v; -- set unsued bits to always-zero
+    sys_env_cmd_mask_v := funct12_ecall_c or funct12_ebreak_c or funct12_mret_c or funct12_wfi_c or funct12_dret_c; -- sum-up set bits
+    decode_aux.sys_env_cmd <= execute_engine.i_reg(instr_funct12_msb_c downto instr_funct12_lsb_c) and sys_env_cmd_mask_v; -- set unused bits to always-zero
   end process decode_helper;
 
 
   -- Execute Engine FSM Comb ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  execute_engine_fsm_comb: process(execute_engine, decode_aux, fetch_engine, cmd_issue, trap_ctrl, csr, ctrl, csr_acc_valid,
-                                   alu_wait_i, bus_d_wait_i, ma_load_i, be_load_i, ma_store_i, be_store_i, excl_state_i)
+  execute_engine_fsm_comb: process(execute_engine, debug_ctrl, decode_aux, fetch_engine, cmd_issue, trap_ctrl, csr, ctrl, csr_acc_valid,
+                                   alu_idone_i, bus_d_wait_i, ma_load_i, be_load_i, ma_store_i, be_store_i, excl_state_i)
     variable opcode_v : std_ulogic_vector(6 downto 0);
   begin
     -- arbiter defaults --
     execute_engine.state_nxt    <= execute_engine.state;
     execute_engine.i_reg_nxt    <= execute_engine.i_reg;
-    execute_engine.is_cp_op_nxt <= execute_engine.is_cp_op;
     execute_engine.is_ci_nxt    <= execute_engine.is_ci;
     execute_engine.sleep_nxt    <= execute_engine.sleep;
     execute_engine.branched_nxt <= execute_engine.branched;
@@ -891,6 +895,9 @@ begin
     -- trap environment control --
     trap_ctrl.env_start_ack     <= '0';
     trap_ctrl.env_end           <= '0';
+
+    -- leave debug mode --
+    debug_ctrl.dret             <= '0';
 
     -- exception trigger --
     trap_ctrl.instr_be          <= '0';
@@ -930,8 +937,7 @@ begin
       -- ------------------------------------------------------------
         -- set reg_file's r0 to zero --
         if (rf_r0_is_reg_c = true) then -- is r0 implemented as physical register, which has to be set to zero?
-          ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c; -- hacky! CSR read-access CP selected without a valid CSR-read -> results zero
-          ctrl_nxt(ctrl_cp_id_msb_c downto ctrl_cp_id_lsb_c) <= cp_sel_csr_rd_c; -- use CSR-READ CP
+          ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_csrr_c; -- hacky! CSR read-access without a valid CSR-read -> results zero
           ctrl_nxt(ctrl_rf_r0_we_c)                          <= '1'; -- force RF write access and force rd=r0
         end if;
         --
@@ -940,8 +946,6 @@ begin
 
       when DISPATCH => -- Get new command from instruction issue engine
       -- ------------------------------------------------------------
-        -- housekeeping --
-        execute_engine.is_cp_op_nxt <= '0'; -- no co-processor operation yet
         -- PC update --
         execute_engine.pc_mux_sel <= '0'; -- linear next PC
         -- IR update --
@@ -965,39 +969,39 @@ begin
         end if;
 
 
-      when TRAP_ENTER => -- Start trap environment - get MTVEC, stay here for sleep mode
+      when TRAP_ENTER => -- Start trap environment - get TVEC, stay here for sleep mode
       -- ------------------------------------------------------------
         if (trap_ctrl.env_start = '1') then -- trap triggered?
           trap_ctrl.env_start_ack   <= '1';
           execute_engine.state_nxt  <= TRAP_EXECUTE;
         end if;
 
-      when TRAP_EXIT => -- Return from trap environment - get MEPC
+      when TRAP_EXIT => -- Return from trap environment - get EPC
       -- ------------------------------------------------------------
         trap_ctrl.env_end        <= '1';
         execute_engine.state_nxt <= TRAP_EXECUTE;
 
-      when TRAP_EXECUTE => -- Start trap environment - jump to MTVEC / return from trap environment - jump to MEPC
+      when TRAP_EXECUTE => -- Start trap environment -> jump to TVEC / return from trap environment -> jump to EPC
       -- ------------------------------------------------------------
-        execute_engine.pc_mux_sel <= '0'; -- next PC (csr.mtvec)
+        execute_engine.pc_mux_sel <= '0'; -- next_PC
         fetch_engine.reset        <= '1';
         execute_engine.pc_we      <= '1';
         execute_engine.sleep_nxt  <= '0'; -- disable sleep mode
         execute_engine.state_nxt  <= SYS_WAIT;
 
 
-      when EXECUTE => -- Decode and execute instruction (control has to be here for excatly 1 cyle in any case!)
+      when EXECUTE => -- Decode and execute instruction (control has to be here for exactly 1 cycle in any case!)
       -- ------------------------------------------------------------
         opcode_v := execute_engine.i_reg(instr_opcode_msb_c downto instr_opcode_lsb_c+2) & "11"; -- save some bits here, LSBs are always 11 for rv32
         case opcode_v is
 
-          when opcode_alu_c | opcode_alui_c => -- (immediate) ALU operation
+          when opcode_alu_c | opcode_alui_c => -- (register/immediate) ALU operation
           -- ------------------------------------------------------------
             ctrl_nxt(ctrl_alu_opa_mux_c) <= '0'; -- use RS1 as ALU.OPA
             ctrl_nxt(ctrl_alu_opb_mux_c) <= decode_aux.alu_immediate; -- use IMM as ALU.OPB for immediate operations
             ctrl_nxt(ctrl_rf_in_mux_c)   <= '0'; -- RF input = ALU result
 
-            -- ALU arithmetic operation type and ADD/SUB --
+            -- ALU arithmetic operation type --
             if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_slt_c) or
                (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sltu_c) then
               ctrl_nxt(ctrl_alu_arith_c) <= alu_arith_cmd_slt_c;
@@ -1024,32 +1028,24 @@ begin
             -- co-processor MULDIV operation? --
             if (CPU_EXTENSION_RISCV_M = true) and (execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alu_c(5)) and (execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0000001") then -- MULDIV CP op?
               ctrl_nxt(ctrl_cp_id_msb_c downto ctrl_cp_id_lsb_c) <= cp_sel_muldiv_c; -- use MULDIV CP
-              execute_engine.is_cp_op_nxt                        <= '1'; -- this is a CP operation
               ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
-            -- co-processor bit manipulation operation? --
-            elsif (CPU_EXTENSION_RISCV_B = true) and
-              (((execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alu_c(5))  and (decode_aux.is_bitmanip_reg = '1')) or -- register operation
-               ((execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alui_c(5)) and (decode_aux.is_bitmanip_imm = '1'))) then -- immediate operation
-              ctrl_nxt(ctrl_cp_id_msb_c downto ctrl_cp_id_lsb_c) <= cp_sel_bitmanip_c; -- use BITMANIP CP
-              execute_engine.is_cp_op_nxt                        <= '1'; -- this is a CP operation
-              ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
-            -- ALU operation, function select --
             else
-              execute_engine.is_cp_op_nxt <= '0'; -- no CP operation
-              case execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) is -- actual ALU.func operation (re-coding)
-                when funct3_xor_c | funct3_or_c | funct3_and_c => ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_logic_c;
-                when funct3_sll_c | funct3_sr_c                => ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_shift_c;
-                when others                                    => ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_arith_c;
+            -- ALU operation, function select --
+              ctrl_nxt(ctrl_cp_id_msb_c downto ctrl_cp_id_lsb_c) <= cp_sel_shifter_c; -- use SHIFTER CP (only relevant for shift operations)
+              case execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) is
+                when funct3_sll_c | funct3_sr_c => -- SHIFT operation
+                  ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
+                when funct3_xor_c | funct3_or_c | funct3_and_c => -- LOGIC operation
+                  ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_logic_c;
+                when others => -- ARITHMETIC operation
+                  ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_arith_c;
               end case;
             end if;
 
-            -- multi cycle alu operation? --
+            -- multi cycle ALU operation? --
             if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sll_c) or -- SLL shift operation?
                (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sr_c) or -- SR shift operation?
-               ((CPU_EXTENSION_RISCV_M = true) and (execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alu_c(5)) and (execute_engine.i_reg(instr_funct7_lsb_c) = '1')) or -- MULDIV CP op?
-               ((CPU_EXTENSION_RISCV_B = true) and (
-                 ((execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alu_c(5))  and (decode_aux.is_bitmanip_reg = '1')) or -- BITMANIP CP register operation?
-                 ((execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alui_c(5)) and (decode_aux.is_bitmanip_imm = '1'))) ) then -- BITMANIP CP immediate operation?
+               ((CPU_EXTENSION_RISCV_M = true) and (execute_engine.i_reg(instr_opcode_lsb_c+5) = opcode_alu_c(5)) and (execute_engine.i_reg(instr_funct7_lsb_c) = '1')) then -- MULDIV CP op?
               execute_engine.state_nxt <= ALU_WAIT;
             else -- single cycle ALU operation
               ctrl_nxt(ctrl_rf_wb_en_c) <= '1'; -- valid RF write-back
@@ -1078,7 +1074,7 @@ begin
             ctrl_nxt(ctrl_bus_mo_we_c)  <= '1'; -- write to MAR and MDO (MDO only relevant for store)
             --
             if (CPU_EXTENSION_RISCV_A = false) or -- atomic extension disabled
-               (execute_engine.i_reg(instr_opcode_lsb_c+3 downto instr_opcode_lsb_c+2) = "00") then  -- normal integerload/store
+               (execute_engine.i_reg(instr_opcode_lsb_c+3 downto instr_opcode_lsb_c+2) = "00") then  -- normal integer load/store
               execute_engine.state_nxt <= LOADSTORE_0;
             else -- atomic operation
               if (execute_engine.i_reg(instr_funct5_msb_c downto instr_funct5_lsb_c) = funct5_a_sc_c) or -- store-conditional
@@ -1108,8 +1104,6 @@ begin
           -- ------------------------------------------------------------
             if (CPU_EXTENSION_RISCV_Zicsr = true) then
               csr.re_nxt <= csr_acc_valid; -- always read CSR if valid access, only relevant for CSR-instructions
-              ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c; -- only relevant for CSR-instructions
-              ctrl_nxt(ctrl_cp_id_msb_c downto ctrl_cp_id_lsb_c) <= cp_sel_csr_rd_c; -- use CSR-READ CP, only relevant for CSR-instructions
               if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_env_c) then -- system/environment
                 execute_engine.state_nxt <= SYS_ENV;
               else -- CSR access
@@ -1123,7 +1117,6 @@ begin
           -- ------------------------------------------------------------
             if (CPU_EXTENSION_RISCV_Zfinx = true) and (decode_aux.is_float_op = '1') then
               ctrl_nxt(ctrl_cp_id_msb_c downto ctrl_cp_id_lsb_c) <= cp_sel_fpu_c; -- use FPU CP
-              execute_engine.is_cp_op_nxt                        <= '1'; -- this is a CP operation
               ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
               execute_engine.state_nxt                           <= ALU_WAIT;
             else
@@ -1144,8 +1137,20 @@ begin
           when funct12_ecall_c  => trap_ctrl.env_call       <= '1'; -- ECALL
           when funct12_ebreak_c => trap_ctrl.break_point    <= '1'; -- EBREAK
           when funct12_mret_c   => execute_engine.state_nxt <= TRAP_EXIT; -- MRET
-          when funct12_wfi_c    => execute_engine.sleep_nxt <= '1'; -- WFI
-          when others           => NULL;-- undefined
+          when funct12_wfi_c => -- WFI
+            if (CPU_EXTENSION_RISCV_DEBUG = true) and (debug_ctrl.running = '1') then
+              NULL; -- just a NOP when in debug mode
+            else
+              execute_engine.sleep_nxt <= '1'; -- WFI (normal)
+            end if;
+          when funct12_dret_c => -- DRET
+            if (CPU_EXTENSION_RISCV_DEBUG = true) then
+              execute_engine.state_nxt <= TRAP_EXIT;
+              debug_ctrl.dret <= '1';
+            else
+              NULL;
+            end if;
+          when others => NULL; -- undefined
         end case;
 
 
@@ -1161,23 +1166,18 @@ begin
             csr.we_nxt <= '0';
         end case;
         -- register file write back --
-        ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
+        ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_csrr_c;
         ctrl_nxt(ctrl_rf_in_mux_c)                         <= '0'; -- RF input = ALU result
         ctrl_nxt(ctrl_rf_wb_en_c)                          <= '1'; -- valid RF write-back
         execute_engine.state_nxt                           <= DISPATCH;
 
 
-      when ALU_WAIT => -- wait for multi-cycle ALU operation (shifter or CP) to finish
+      when ALU_WAIT => -- wait for multi-cycle ALU operation (co-processor) to finish
       -- ------------------------------------------------------------
         ctrl_nxt(ctrl_rf_in_mux_c) <= '0'; -- RF input = ALU result
-        -- cp access or alu.shift? --
-        if (execute_engine.is_cp_op = '1') then
-          ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
-        else
-          ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_shift_c;
-        end if;
+        ctrl_nxt(ctrl_alu_func1_c downto ctrl_alu_func0_c) <= alu_func_cmd_copro_c;
         -- wait for result --
-        if (alu_wait_i = '0') then
+        if (alu_idone_i = '1') then -- done
           ctrl_nxt(ctrl_rf_wb_en_c) <= '1'; -- valid RF write-back
           execute_engine.state_nxt  <= DISPATCH;
         end if;
@@ -1228,7 +1228,7 @@ begin
         if (execute_engine.i_reg(instr_opcode_msb_c-1) = '0') or (decode_aux.is_atomic_lr = '1') then -- normal load or atomic load-reservate
           ctrl_nxt(ctrl_bus_rd_c)  <= '1'; -- read request
         else -- store
-          if (CPU_EXTENSION_RISCV_A = true) and (decode_aux.is_atomic_sc = '1') then -- evaluate lock state
+          if (decode_aux.is_atomic_sc = '1') then -- evaluate lock state
             if (excl_state_i = '1') then -- lock is still ok - perform write access
               ctrl_nxt(ctrl_bus_wr_c) <= '1'; -- write request
             end if;
@@ -1254,7 +1254,7 @@ begin
           execute_engine.state_nxt <= DISPATCH;
         elsif (bus_d_wait_i = '0') then -- wait for bus to finish transaction
           -- remove atomic lock if this is NOT the LR.W instruction used to SET the lock --
-          if (CPU_EXTENSION_RISCV_A = true) and (decode_aux.is_atomic_lr = '0') then -- execute and evaluate atomic store-conditional
+          if (decode_aux.is_atomic_lr = '0') then -- execute and evaluate atomic store-conditional
             ctrl_nxt(ctrl_bus_de_lock_c) <= '1';
           end if;
           -- data write-back --
@@ -1281,24 +1281,15 @@ begin
 
   -- CSR Access Check -----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  csr_access_check: process(execute_engine.i_reg, csr)
-    variable csr_wacc_v           : std_ulogic; -- to check access to read-only CSRs
-    variable csr_mcounteren_hpm_v : std_ulogic_vector(31 downto 0); -- max 29 HPM counters, plus 3 LSB-aligned dummy bits
+  csr_access_check: process(execute_engine.i_reg, csr, debug_ctrl)
+    variable csr_wacc_v : std_ulogic; -- to check access to read-only CSRs
   begin
     -- is this CSR instruction really going to write to a CSR? --
     if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_csrrw_c) or
        (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_csrrwi_c) then
       csr_wacc_v := '1'; -- always write CSR
     else -- clear/set
-      csr_wacc_v := or_all_f(execute_engine.i_reg(instr_rs1_msb_c downto instr_rs1_lsb_c)); -- write allowed if rs1/uimm5 != 0
-    end if;
-
-    -- low privilege level access to hpm counters? --
-    csr_mcounteren_hpm_v := (others => '0');
-    if (CPU_EXTENSION_RISCV_U = true) and (HPM_NUM_CNTS /= 0) then
-      csr_mcounteren_hpm_v(3+(HPM_NUM_CNTS-1) downto 3+0) := csr.mcounteren_hpm(HPM_NUM_CNTS-1 downto 0);
-    else -- 'mcounteren' CSR is hardwired to zero if user mode is not implemented
-      csr_mcounteren_hpm_v := (others => '0');
+      csr_wacc_v := or_reduce_f(execute_engine.i_reg(instr_rs1_msb_c downto instr_rs1_lsb_c)); -- write allowed if rs1/uimm5 != 0
     end if;
 
     -- check CSR access --
@@ -1313,26 +1304,13 @@ begin
           NULL;
         end if;
 
-      -- machine trap setup --
-      when csr_mstatus_c | csr_misa_c | csr_mie_c | csr_mtvec_c | csr_mcounteren_c | csr_mstatush_c =>
+      -- machine trap setup & handling --
+      when csr_mstatus_c | csr_misa_c | csr_mie_c | csr_mtvec_c | csr_mcounteren_c | csr_mscratch_c | csr_mepc_c | csr_mcause_c =>
         csr_acc_valid <= csr.priv_m_mode; -- M-mode only, NOTE: MISA is read-only in the NEORV32 but we do not cause an exception here for compatibility
-
-      -- machine trap handling --
-      when csr_mscratch_c | csr_mepc_c | csr_mcause_c | csr_mtval_c  =>
-        csr_acc_valid <= csr.priv_m_mode; -- M-mode only
-      when csr_mip_c => -- NOTE: MIP is read-only in the NEORV32
+      when csr_mip_c | csr_mtval_c => -- NOTE: MIP and MTVAL are read-only in the NEORV32!
         csr_acc_valid <= (not csr_wacc_v) and csr.priv_m_mode; -- M-mode only, read-only
 
-      -- physical memory protection - configuration --
-      when csr_pmpcfg0_c | csr_pmpcfg1_c | csr_pmpcfg2_c  | csr_pmpcfg3_c  | csr_pmpcfg4_c  | csr_pmpcfg5_c  | csr_pmpcfg6_c  | csr_pmpcfg7_c |
-           csr_pmpcfg8_c | csr_pmpcfg9_c | csr_pmpcfg10_c | csr_pmpcfg11_c | csr_pmpcfg12_c | csr_pmpcfg13_c | csr_pmpcfg14_c | csr_pmpcfg15_c =>
-        if (PMP_NUM_REGIONS > 0) then
-          csr_acc_valid <= csr.priv_m_mode; -- M-mode only
-        else
-          NULL;
-        end if;
-
-      -- physical memory protection - address --
+      -- physical memory protection (PMP) - address & configuration --
       when csr_pmpaddr0_c  | csr_pmpaddr1_c  | csr_pmpaddr2_c  | csr_pmpaddr3_c  | csr_pmpaddr4_c  | csr_pmpaddr5_c  | csr_pmpaddr6_c  | csr_pmpaddr7_c  |
            csr_pmpaddr8_c  | csr_pmpaddr9_c  | csr_pmpaddr10_c | csr_pmpaddr11_c | csr_pmpaddr12_c | csr_pmpaddr13_c | csr_pmpaddr14_c | csr_pmpaddr15_c |
            csr_pmpaddr16_c | csr_pmpaddr17_c | csr_pmpaddr18_c | csr_pmpaddr19_c | csr_pmpaddr20_c | csr_pmpaddr21_c | csr_pmpaddr22_c | csr_pmpaddr23_c |
@@ -1340,36 +1318,43 @@ begin
            csr_pmpaddr32_c | csr_pmpaddr33_c | csr_pmpaddr34_c | csr_pmpaddr35_c | csr_pmpaddr36_c | csr_pmpaddr37_c | csr_pmpaddr38_c | csr_pmpaddr39_c |
            csr_pmpaddr40_c | csr_pmpaddr41_c | csr_pmpaddr42_c | csr_pmpaddr43_c | csr_pmpaddr44_c | csr_pmpaddr45_c | csr_pmpaddr46_c | csr_pmpaddr47_c |
            csr_pmpaddr48_c | csr_pmpaddr49_c | csr_pmpaddr50_c | csr_pmpaddr51_c | csr_pmpaddr52_c | csr_pmpaddr53_c | csr_pmpaddr54_c | csr_pmpaddr55_c |
-           csr_pmpaddr56_c | csr_pmpaddr57_c | csr_pmpaddr58_c | csr_pmpaddr59_c | csr_pmpaddr60_c | csr_pmpaddr61_c | csr_pmpaddr62_c | csr_pmpaddr63_c =>
+           csr_pmpaddr56_c | csr_pmpaddr57_c | csr_pmpaddr58_c | csr_pmpaddr59_c | csr_pmpaddr60_c | csr_pmpaddr61_c | csr_pmpaddr62_c | csr_pmpaddr63_c |
+           csr_pmpcfg0_c   | csr_pmpcfg1_c   | csr_pmpcfg2_c   | csr_pmpcfg3_c   | csr_pmpcfg4_c   | csr_pmpcfg5_c   | csr_pmpcfg6_c   | csr_pmpcfg7_c   |
+           csr_pmpcfg8_c   | csr_pmpcfg9_c   | csr_pmpcfg10_c  | csr_pmpcfg11_c  | csr_pmpcfg12_c  | csr_pmpcfg13_c  | csr_pmpcfg14_c  | csr_pmpcfg15_c =>
         if (PMP_NUM_REGIONS > 0) then
           csr_acc_valid <= csr.priv_m_mode; -- M-mode only
         else
           NULL;
         end if;
 
-      -- machine counters/timers --
-      when csr_mcycle_c | csr_minstret_c =>
-        csr_acc_valid <= csr.priv_m_mode and bool_to_ulogic_f(boolean(cpu_cnt_lo_width_c > 0)); -- M-mode only, access valid if really implemented
-      when csr_mcycleh_c | csr_minstreth_c =>
-        csr_acc_valid <= csr.priv_m_mode and bool_to_ulogic_f(boolean(cpu_cnt_hi_width_c > 0)); -- M-mode only, access valid if really implemented
-
-      when csr_mhpmcounter3_c   | csr_mhpmcounter4_c   | csr_mhpmcounter5_c   | csr_mhpmcounter6_c   | csr_mhpmcounter7_c   | csr_mhpmcounter8_c   | -- LOW
+      -- hardware performance monitors (HPM) --
+      when csr_mhpmcounter3_c   | csr_mhpmcounter4_c   | csr_mhpmcounter5_c   | csr_mhpmcounter6_c   | csr_mhpmcounter7_c   | csr_mhpmcounter8_c   | -- counter LOW
            csr_mhpmcounter9_c   | csr_mhpmcounter10_c  | csr_mhpmcounter11_c  | csr_mhpmcounter12_c  | csr_mhpmcounter13_c  | csr_mhpmcounter14_c  |
            csr_mhpmcounter15_c  | csr_mhpmcounter16_c  | csr_mhpmcounter17_c  | csr_mhpmcounter18_c  | csr_mhpmcounter19_c  | csr_mhpmcounter20_c  |
            csr_mhpmcounter21_c  | csr_mhpmcounter22_c  | csr_mhpmcounter23_c  | csr_mhpmcounter24_c  | csr_mhpmcounter25_c  | csr_mhpmcounter26_c  |
            csr_mhpmcounter27_c  | csr_mhpmcounter28_c  | csr_mhpmcounter29_c  | csr_mhpmcounter30_c  | csr_mhpmcounter31_c  |
-           csr_mhpmcounter3h_c  | csr_mhpmcounter4h_c  | csr_mhpmcounter5h_c  | csr_mhpmcounter6h_c  | csr_mhpmcounter7h_c  | csr_mhpmcounter8h_c  | -- HIGH
+           csr_mhpmcounter3h_c  | csr_mhpmcounter4h_c  | csr_mhpmcounter5h_c  | csr_mhpmcounter6h_c  | csr_mhpmcounter7h_c  | csr_mhpmcounter8h_c  | -- counter HIGH
            csr_mhpmcounter9h_c  | csr_mhpmcounter10h_c | csr_mhpmcounter11h_c | csr_mhpmcounter12h_c | csr_mhpmcounter13h_c | csr_mhpmcounter14h_c |
            csr_mhpmcounter15h_c | csr_mhpmcounter16h_c | csr_mhpmcounter17h_c | csr_mhpmcounter18h_c | csr_mhpmcounter19h_c | csr_mhpmcounter20h_c |
            csr_mhpmcounter21h_c | csr_mhpmcounter22h_c | csr_mhpmcounter23h_c | csr_mhpmcounter24h_c | csr_mhpmcounter25h_c | csr_mhpmcounter26h_c |
-           csr_mhpmcounter27h_c | csr_mhpmcounter28h_c | csr_mhpmcounter29h_c | csr_mhpmcounter30h_c | csr_mhpmcounter31h_c =>
+           csr_mhpmcounter27h_c | csr_mhpmcounter28h_c | csr_mhpmcounter29h_c | csr_mhpmcounter30h_c | csr_mhpmcounter31h_c |
+           csr_mhpmevent3_c     | csr_mhpmevent4_c     | csr_mhpmevent5_c     | csr_mhpmevent6_c     | csr_mhpmevent7_c     | csr_mhpmevent8_c     | -- event configuration
+           csr_mhpmevent9_c     | csr_mhpmevent10_c    | csr_mhpmevent11_c    | csr_mhpmevent12_c    | csr_mhpmevent13_c    | csr_mhpmevent14_c    |
+           csr_mhpmevent15_c    | csr_mhpmevent16_c    | csr_mhpmevent17_c    | csr_mhpmevent18_c    | csr_mhpmevent19_c    | csr_mhpmevent20_c    |
+           csr_mhpmevent21_c    | csr_mhpmevent22_c    | csr_mhpmevent23_c    | csr_mhpmevent24_c    | csr_mhpmevent25_c    | csr_mhpmevent26_c    |
+           csr_mhpmevent27_c    | csr_mhpmevent28_c    | csr_mhpmevent29_c    | csr_mhpmevent30_c    | csr_mhpmevent31_c =>
         if (HPM_NUM_CNTS > 0) then
           csr_acc_valid <= csr.priv_m_mode; -- M-mode only
         else
           NULL;
         end if;
 
-      -- user counters/timers --
+      -- counters/timers --
+      when csr_mcycle_c | csr_minstret_c =>
+        csr_acc_valid <= csr.priv_m_mode and bool_to_ulogic_f(boolean(cpu_cnt_lo_width_c > 0)); -- M-mode only, access valid if really implemented
+      when csr_mcycleh_c | csr_minstreth_c =>
+        csr_acc_valid <= csr.priv_m_mode and bool_to_ulogic_f(boolean(cpu_cnt_hi_width_c > 0)); -- M-mode only, access valid if really implemented
+
       when csr_cycle_c =>
         csr_acc_valid <= (not csr_wacc_v) and (csr.priv_m_mode or csr.mcounteren_cy) and bool_to_ulogic_f(boolean(cpu_cnt_lo_width_c > 0)); -- M-mode, U-mode if authorized, read-only, access if implemented
       when csr_cycleh_c =>
@@ -1382,40 +1367,21 @@ begin
       when csr_time_c | csr_timeh_c =>
         csr_acc_valid <= (not csr_wacc_v) and (csr.priv_m_mode or csr.mcounteren_tm); -- M-mode, U-mode if authorized, read-only
 
-      when csr_hpmcounter3_c   | csr_hpmcounter4_c   | csr_hpmcounter5_c   | csr_hpmcounter6_c   | csr_hpmcounter7_c   | csr_hpmcounter8_c   | -- LOW
-           csr_hpmcounter9_c   | csr_hpmcounter10_c  | csr_hpmcounter11_c  | csr_hpmcounter12_c  | csr_hpmcounter13_c  | csr_hpmcounter14_c  |
-           csr_hpmcounter15_c  | csr_hpmcounter16_c  | csr_hpmcounter17_c  | csr_hpmcounter18_c  | csr_hpmcounter19_c  | csr_hpmcounter20_c  |
-           csr_hpmcounter21_c  | csr_hpmcounter22_c  | csr_hpmcounter23_c  | csr_hpmcounter24_c  | csr_hpmcounter25_c  | csr_hpmcounter26_c  |
-           csr_hpmcounter27_c  | csr_hpmcounter28_c  | csr_hpmcounter29_c  | csr_hpmcounter30_c  | csr_hpmcounter31_c  |
-           csr_hpmcounter3h_c  | csr_hpmcounter4h_c  | csr_hpmcounter5h_c  | csr_hpmcounter6h_c  | csr_hpmcounter7h_c  | csr_hpmcounter8h_c  | -- HIGH
-           csr_hpmcounter9h_c  | csr_hpmcounter10h_c | csr_hpmcounter11h_c | csr_hpmcounter12h_c | csr_hpmcounter13h_c | csr_hpmcounter14h_c |
-           csr_hpmcounter15h_c | csr_hpmcounter16h_c | csr_hpmcounter17h_c | csr_hpmcounter18h_c | csr_hpmcounter19h_c | csr_hpmcounter20h_c |
-           csr_hpmcounter21h_c | csr_hpmcounter22h_c | csr_hpmcounter23h_c | csr_hpmcounter24h_c | csr_hpmcounter25h_c | csr_hpmcounter26h_c |
-           csr_hpmcounter27h_c | csr_hpmcounter28h_c | csr_hpmcounter29h_c | csr_hpmcounter30h_c | csr_hpmcounter31h_c =>
-        if (HPM_NUM_CNTS > 0) then
-          csr_acc_valid <= (not csr_wacc_v) and (csr.priv_m_mode or csr_mcounteren_hpm_v(to_integer(unsigned(csr.addr(4 downto 0))))); -- M-mode, U-mode if authorized, read-only
-        else
-          NULL;
-        end if;
-
-      -- machine counter setup --
       when csr_mcountinhibit_c =>
         csr_acc_valid <= csr.priv_m_mode; -- M-mode only
 
-      when csr_mhpmevent3_c  | csr_mhpmevent4_c  | csr_mhpmevent5_c  | csr_mhpmevent6_c  | csr_mhpmevent7_c  | csr_mhpmevent8_c  |
-           csr_mhpmevent9_c  | csr_mhpmevent10_c | csr_mhpmevent11_c | csr_mhpmevent12_c | csr_mhpmevent13_c | csr_mhpmevent14_c |
-           csr_mhpmevent15_c | csr_mhpmevent16_c | csr_mhpmevent17_c | csr_mhpmevent18_c | csr_mhpmevent19_c | csr_mhpmevent20_c |
-           csr_mhpmevent21_c | csr_mhpmevent22_c | csr_mhpmevent23_c | csr_mhpmevent24_c | csr_mhpmevent25_c | csr_mhpmevent26_c |
-           csr_mhpmevent27_c | csr_mhpmevent28_c | csr_mhpmevent29_c | csr_mhpmevent30_c | csr_mhpmevent31_c =>
-        if (HPM_NUM_CNTS > 0) then
-          csr_acc_valid <= csr.priv_m_mode; -- M-mode only
-        else
-          NULL;
-        end if;
 
       -- machine information registers & custom (NEORV32-specific) read-only CSRs --
       when csr_mvendorid_c | csr_marchid_c | csr_mimpid_c | csr_mhartid_c | csr_mzext_c =>
         csr_acc_valid <= (not csr_wacc_v) and csr.priv_m_mode; -- M-mode only, read-only
+
+      -- debug mode CSRs --
+      when csr_dcsr_c | csr_dpc_c | csr_dscratch0_c =>
+        if (CPU_EXTENSION_RISCV_DEBUG = true) then
+          csr_acc_valid <= debug_ctrl.running; -- access in only in debug-mode
+        else
+          NULL;
+        end if;
 
       -- undefined / not implemented --
       when others =>
@@ -1426,7 +1392,7 @@ begin
 
   -- Illegal Instruction Check --------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  illegal_instruction_check: process(execute_engine, decode_aux, csr_acc_valid)
+  illegal_instruction_check: process(execute_engine, decode_aux, csr_acc_valid, debug_ctrl)
     variable opcode_v : std_ulogic_vector(6 downto 0);
   begin
     -- illegal instructions are checked in the EXECUTE stage
@@ -1444,12 +1410,11 @@ begin
       end if;
 
       -- check instructions --
-      opcode_v := execute_engine.i_reg(instr_opcode_msb_c downto instr_opcode_lsb_c+2) & "11";
+      opcode_v := execute_engine.i_reg(instr_opcode_msb_c downto instr_opcode_lsb_c+2) & "11"; -- save some bits here, LSBs are always 11 for rv32
       case opcode_v is
 
-        -- check sufficient LUI, UIPC, JAL (only check actual OPCODE) --
+        when opcode_lui_c | opcode_auipc_c | opcode_jal_c => -- check sufficient LUI, UIPC, JAL (only check actual OPCODE)
         -- ------------------------------------------------------------
-        when opcode_lui_c | opcode_auipc_c | opcode_jal_c =>
           illegal_instruction <= '0';
           -- illegal E-CPU register? --
           if (CPU_EXTENSION_RISCV_E = true) and (execute_engine.i_reg(instr_rd_msb_c) = '1') then
@@ -1460,10 +1425,6 @@ begin
         -- ------------------------------------------------------------
           if (execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) = "0000001") then -- MULDIV
             if (CPU_EXTENSION_RISCV_M = false) then -- not implemented
-              illegal_instruction <= '1';
-            end if;
-          elsif (decode_aux.is_bitmanip_reg = '1') then -- bit manipulation
-            if (CPU_EXTENSION_RISCV_B = false) then -- not implemented
               illegal_instruction <= '1';
             end if;
           elsif ((execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_subadd_c) or
@@ -1482,11 +1443,7 @@ begin
 
         when opcode_alui_c => -- check ALUI.funct7
         -- ------------------------------------------------------------
-          if (decode_aux.is_bitmanip_imm = '1') then -- bit manipulation
-            if (CPU_EXTENSION_RISCV_B = false) then -- not implemented
-              illegal_instruction <= '1';
-            end if;
-          elsif ((execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sll_c) and
+          if ((execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sll_c) and
               (execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) /= "0000000")) or -- shift logical left
              ((execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sr_c) and
               ((execute_engine.i_reg(instr_funct7_msb_c downto instr_funct7_lsb_c) /= "0000000") and
@@ -1561,9 +1518,8 @@ begin
 
         when opcode_fence_c => -- fence instructions
         -- ------------------------------------------------------------
-          if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_fencei_c) and (CPU_EXTENSION_RISCV_Zifencei = true) then -- FENCE.I
-            illegal_instruction <= '0';
-          elsif (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_fence_c) then -- FENCE
+          if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_fencei_c) or -- FENCE.I -- NO trap if not implemented
+             (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_fence_c) then -- FENCE
             illegal_instruction <= '0';
           else
             illegal_instruction <= '1';
@@ -1593,12 +1549,13 @@ begin
               end if;
             end if;
 
-          -- ecall, ebreak, mret, wfi --
+          -- ecall, ebreak, mret, wfi, dret --
           elsif (execute_engine.i_reg(instr_rd_msb_c  downto instr_rd_lsb_c)  = "00000") and
                 (execute_engine.i_reg(instr_rs1_msb_c downto instr_rs1_lsb_c) = "00000") then
             if (execute_engine.i_reg(instr_funct12_msb_c  downto instr_funct12_lsb_c) = funct12_ecall_c)  or -- ECALL
                (execute_engine.i_reg(instr_funct12_msb_c  downto instr_funct12_lsb_c) = funct12_ebreak_c) or -- EBREAK 
                (execute_engine.i_reg(instr_funct12_msb_c  downto instr_funct12_lsb_c) = funct12_mret_c)   or -- MRET
+               ((execute_engine.i_reg(instr_funct12_msb_c downto instr_funct12_lsb_c) = (funct12_dret_c)) and (CPU_EXTENSION_RISCV_DEBUG = true) and (debug_ctrl.running = '1')) or -- DRET
                (execute_engine.i_reg(instr_funct12_msb_c  downto instr_funct12_lsb_c) = funct12_wfi_c) then  -- WFI
               illegal_instruction <= '0';
             else
@@ -1641,7 +1598,8 @@ begin
   end process illegal_instruction_check;
 
   -- any illegal condition? --
-  trap_ctrl.instr_il <= illegal_instruction or illegal_opcode_lsbs or illegal_register or illegal_compressed;
+  -- ignore illegal register condition in debug mode
+  trap_ctrl.instr_il <= illegal_instruction or illegal_opcode_lsbs or (illegal_register and (not debug_ctrl.running)) or illegal_compressed;
 
 
 -- ****************************************************************************************************************************
@@ -1655,27 +1613,54 @@ begin
   begin
     if (rstn_i = '0') then
       trap_ctrl.exc_buf   <= (others => '0');
+      trap_ctrl.exc_buf(exception_db_break_c) <= '0'; -- enter debug mode
       trap_ctrl.irq_buf   <= (others => def_rst_val_c);
-      trap_ctrl.irq_buf(interrupt_nm_irq_c) <= '0'; -- NMI
+      trap_ctrl.irq_buf(interrupt_nm_irq_c)   <= '0'; -- NMI
+      trap_ctrl.irq_buf(interrupt_db_halt_c)  <= '0'; -- enter debug mode
+      trap_ctrl.irq_buf(interrupt_db_step_c)  <= '0'; -- enter debug mode
       trap_ctrl.exc_ack   <= '0';
       trap_ctrl.irq_ack   <= (others => '0');
       trap_ctrl.env_start <= '0';
       trap_ctrl.cause     <= (others => def_rst_val_c);
     elsif rising_edge(clk_i) then
       if (CPU_EXTENSION_RISCV_Zicsr = true) then
+
         -- exception buffer: misaligned load/store/instruction address
-        trap_ctrl.exc_buf(exception_lalign_c)    <= (trap_ctrl.exc_buf(exception_lalign_c)    or ma_load_i)          and (not trap_ctrl.exc_ack);
-        trap_ctrl.exc_buf(exception_salign_c)    <= (trap_ctrl.exc_buf(exception_salign_c)    or ma_store_i)         and (not trap_ctrl.exc_ack);
-        trap_ctrl.exc_buf(exception_ialign_c)    <= (trap_ctrl.exc_buf(exception_ialign_c)    or trap_ctrl.instr_ma) and (not trap_ctrl.exc_ack);
+        trap_ctrl.exc_buf(exception_lalign_c) <= (trap_ctrl.exc_buf(exception_lalign_c) or ma_load_i)          and (not trap_ctrl.exc_ack);
+        trap_ctrl.exc_buf(exception_salign_c) <= (trap_ctrl.exc_buf(exception_salign_c) or ma_store_i)         and (not trap_ctrl.exc_ack);
+        trap_ctrl.exc_buf(exception_ialign_c) <= (trap_ctrl.exc_buf(exception_ialign_c) or trap_ctrl.instr_ma) and (not trap_ctrl.exc_ack);
+
         -- exception buffer: load/store/instruction bus access error
-        trap_ctrl.exc_buf(exception_laccess_c)   <= (trap_ctrl.exc_buf(exception_laccess_c)   or be_load_i)          and (not trap_ctrl.exc_ack);
-        trap_ctrl.exc_buf(exception_saccess_c)   <= (trap_ctrl.exc_buf(exception_saccess_c)   or be_store_i)         and (not trap_ctrl.exc_ack);
-        trap_ctrl.exc_buf(exception_iaccess_c)   <= (trap_ctrl.exc_buf(exception_iaccess_c)   or trap_ctrl.instr_be) and (not trap_ctrl.exc_ack);
+        trap_ctrl.exc_buf(exception_laccess_c) <= (trap_ctrl.exc_buf(exception_laccess_c) or be_load_i)          and (not trap_ctrl.exc_ack);
+        trap_ctrl.exc_buf(exception_saccess_c) <= (trap_ctrl.exc_buf(exception_saccess_c) or be_store_i)         and (not trap_ctrl.exc_ack);
+        trap_ctrl.exc_buf(exception_iaccess_c) <= (trap_ctrl.exc_buf(exception_iaccess_c) or trap_ctrl.instr_be) and (not trap_ctrl.exc_ack);
+
         -- exception buffer: illegal instruction / env call / break point
         trap_ctrl.exc_buf(exception_m_envcall_c) <= (trap_ctrl.exc_buf(exception_m_envcall_c) or (trap_ctrl.env_call and csr.priv_m_mode)) and (not trap_ctrl.exc_ack);
         trap_ctrl.exc_buf(exception_u_envcall_c) <= (trap_ctrl.exc_buf(exception_u_envcall_c) or (trap_ctrl.env_call and csr.priv_u_mode)) and (not trap_ctrl.exc_ack);
-        trap_ctrl.exc_buf(exception_break_c)     <= (trap_ctrl.exc_buf(exception_break_c)     or trap_ctrl.break_point)                    and (not trap_ctrl.exc_ack);
         trap_ctrl.exc_buf(exception_iillegal_c)  <= (trap_ctrl.exc_buf(exception_iillegal_c)  or trap_ctrl.instr_il)                       and (not trap_ctrl.exc_ack);
+        if (CPU_EXTENSION_RISCV_DEBUG = true) then
+          trap_ctrl.exc_buf(exception_break_c) <= (trap_ctrl.exc_buf(exception_break_c) or 
+            (
+              (trap_ctrl.break_point and csr.priv_m_mode and (not csr.dcsr_ebreakm) and (not debug_ctrl.running)) or -- enable break to machine-trap-handler when in machine mode on "ebreak"
+              (trap_ctrl.break_point and csr.priv_u_mode and (not csr.dcsr_ebreaku) and (not debug_ctrl.running))    -- enable break to machine-trap-handler when in user mode on "ebreak"
+            )
+          ) and (not trap_ctrl.exc_ack);
+        else
+          trap_ctrl.exc_buf(exception_break_c) <= (trap_ctrl.exc_buf(exception_break_c) or trap_ctrl.break_point) and (not trap_ctrl.exc_ack);
+        end if;
+
+        -- enter debug mode --
+        if (CPU_EXTENSION_RISCV_DEBUG = true) then
+          trap_ctrl.exc_buf(exception_db_break_c) <= (trap_ctrl.exc_buf(exception_db_break_c) or debug_ctrl.trig_break) and (not trap_ctrl.exc_ack);
+          trap_ctrl.irq_buf(interrupt_db_halt_c)  <= (trap_ctrl.irq_buf(interrupt_db_halt_c)  or debug_ctrl.trig_halt)  and (not trap_ctrl.irq_ack(interrupt_db_halt_c));
+          trap_ctrl.irq_buf(interrupt_db_step_c)  <= (trap_ctrl.irq_buf(interrupt_db_step_c)  or debug_ctrl.trig_step)  and (not trap_ctrl.irq_ack(interrupt_db_step_c));
+        else
+          trap_ctrl.exc_buf(exception_db_break_c) <= '0';
+          trap_ctrl.irq_buf(interrupt_db_halt_c)  <= '0';
+          trap_ctrl.irq_buf(interrupt_db_step_c)  <= '0';
+        end if;
+
         -- interrupt buffer: non-maskable interrupt
         trap_ctrl.irq_buf(interrupt_nm_irq_c)    <= (trap_ctrl.irq_buf(interrupt_nm_irq_c) or nm_irq_i) and (not trap_ctrl.irq_ack(interrupt_nm_irq_c));
         -- interrupt buffer: machine software/external/timer interrupt
@@ -1686,6 +1671,7 @@ begin
         for i in 0 to 15 loop
           trap_ctrl.irq_buf(interrupt_firq_0_c+i) <= csr.mie_firqe(i) and (trap_ctrl.irq_buf(interrupt_firq_0_c+i) or firq_i(i)) and (not trap_ctrl.irq_ack(interrupt_firq_0_c+i));
         end loop;
+
         -- trap control --
         if (trap_ctrl.env_start = '0') then -- no started trap handler
           if (trap_ctrl.exc_fire = '1') or ((trap_ctrl.irq_fire = '1') and -- trap triggered!
@@ -1707,8 +1693,12 @@ begin
   end process trap_controller;
 
   -- any exception/interrupt? --
-  trap_ctrl.exc_fire <= or_all_f(trap_ctrl.exc_buf); -- exceptions/faults CANNOT be masked
-  trap_ctrl.irq_fire <= or_all_f(trap_ctrl.irq_buf) and csr.mstatus_mie; -- interrupts CAN be masked
+  trap_ctrl.exc_fire <= or_reduce_f(trap_ctrl.exc_buf); -- exceptions/faults CANNOT be masked
+  trap_ctrl.irq_fire <= (or_reduce_f(trap_ctrl.irq_buf) and csr.mstatus_mie and trap_ctrl.db_irq_en) or trap_ctrl.db_irq_fire; -- interrupts CAN be masked
+
+  -- debug mode (entry) interrupts --
+  trap_ctrl.db_irq_en   <= '0' when (CPU_EXTENSION_RISCV_DEBUG = true) and ((debug_ctrl.running = '1') or (csr.dcsr_step = '1')) else '1'; -- no interrupts when IN debug mode or IN single-step mode
+  trap_ctrl.db_irq_fire <= (trap_ctrl.irq_buf(interrupt_db_step_c) or trap_ctrl.irq_buf(interrupt_db_halt_c)) when (CPU_EXTENSION_RISCV_DEBUG = true) else '0'; -- "NMI" for debug mode entry
 
   -- acknowledge mask output --
   firq_ack_o <= trap_ctrl.irq_ack(interrupt_firq_15_c downto interrupt_firq_0_c);
@@ -1719,8 +1709,25 @@ begin
   trap_priority: process(trap_ctrl)
   begin
     -- defaults --
-    trap_ctrl.cause_nxt   <= (others => '-');
+    trap_ctrl.cause_nxt   <= (others => '0');
     trap_ctrl.irq_ack_nxt <= (others => '0');
+
+    -- ----------------------------------------------------------------------------------------
+    -- enter debug mode requests; basically, these are standard interrupt that have some
+    -- special handling - they have the highest priority in order to go to debug when requested
+    -- even if other traps are pending right now; the <trap_ctrl.cause_nxt> value will be
+    -- written to csr.dcsr_cause instead of mcause
+    -- ----------------------------------------------------------------------------------------
+
+    -- break instruction --
+    if (CPU_EXTENSION_RISCV_DEBUG = true) and (trap_ctrl.exc_buf(exception_db_break_c) = '1') then
+      trap_ctrl.cause_nxt <= trap_db_break_c;
+
+    -- external halt request --
+    elsif (CPU_EXTENSION_RISCV_DEBUG = true) and (trap_ctrl.irq_buf(interrupt_db_halt_c) = '1') then
+      trap_ctrl.cause_nxt <= trap_db_halt_c;
+      trap_ctrl.irq_ack_nxt(interrupt_db_halt_c) <= '1';
+
 
     -- ----------------------------------------------------------------------------------------
     -- the following traps are caused by *asynchronous* exceptions (= interrupts)
@@ -1728,7 +1735,7 @@ begin
     -- ----------------------------------------------------------------------------------------
 
     -- interrupt: 1.0 non-maskable interrupt --
-    if (trap_ctrl.irq_buf(interrupt_nm_irq_c) = '1') then
+    elsif (trap_ctrl.irq_buf(interrupt_nm_irq_c) = '1') then
       trap_ctrl.cause_nxt <= trap_nmi_c;
       trap_ctrl.irq_ack_nxt(interrupt_nm_irq_c) <= '1';
 
@@ -1877,6 +1884,17 @@ begin
     -- exception: 0.5 load access fault --
     elsif (trap_ctrl.exc_buf(exception_laccess_c) = '1') then
       trap_ctrl.cause_nxt <= trap_lbe_c;
+
+
+    -- ----------------------------------------------------------------------------------------
+    -- re-enter debug mode during single-stepping; this debug mode entry trap has the lowest
+    -- priority to let "normal" traps kick in during single stepping
+    -- ----------------------------------------------------------------------------------------
+
+    -- single stepping --
+    elsif (CPU_EXTENSION_RISCV_DEBUG = true) and (trap_ctrl.irq_buf(interrupt_db_step_c) = '1') then
+      trap_ctrl.cause_nxt <= trap_db_step_c;
+      trap_ctrl.irq_ack_nxt(interrupt_db_step_c) <= '1';
     end if;
   end process trap_priority;
   
@@ -1910,8 +1928,8 @@ begin
   -- -------------------------------------------------------------------------------------------
   csr_write_access: process(rstn_i, clk_i)
   begin
-    -- NOTE: Register that reset to "def_rst_val_c" do NOT actually have a real reset by default (def_rst_val_c = '-') and have to be
-    -- explicitly initialized by software!
+    -- NOTE: If <dedicated_reset_c> = true then <def_rst_val_c> evaluates to '-'. Register that reset to <def_rst_val_c> do
+    -- NOT actually have a real reset by default (def_rst_val_c = '-') and have to be explicitly initialized by software!
     -- see: https://forums.xilinx.com/t5/General-Technical-Discussion/quot-Don-t-care-quot-reset-value/td-p/412845
     if (rstn_i = '0') then
       csr.we           <= '0';
@@ -1935,10 +1953,9 @@ begin
       --
       csr.mhpmevent <= (others => (others => def_rst_val_c));
       --
-      csr.mcounteren_cy  <= def_rst_val_c;
-      csr.mcounteren_tm  <= def_rst_val_c;
-      csr.mcounteren_ir  <= def_rst_val_c;
-      csr.mcounteren_hpm <= (others => def_rst_val_c);
+      csr.mcounteren_cy <= def_rst_val_c;
+      csr.mcounteren_tm <= def_rst_val_c;
+      csr.mcounteren_ir <= def_rst_val_c;
       --
       csr.mcountinhibit_cy  <= def_rst_val_c;
       csr.mcountinhibit_ir  <= def_rst_val_c;
@@ -1946,6 +1963,14 @@ begin
       --
       csr.fflags <= (others => def_rst_val_c);
       csr.frm    <= (others => def_rst_val_c);
+      --
+      csr.dcsr_ebreakm <= '0';
+      csr.dcsr_ebreaku <= '0';
+      csr.dcsr_step    <= '0';
+      csr.dcsr_prv     <= (others => def_rst_val_c);
+      csr.dcsr_cause   <= (others => def_rst_val_c);
+      csr.dpc          <= (others => def_rst_val_c);
+      csr.dscratch0    <= (others => def_rst_val_c);
 
     elsif rising_edge(clk_i) then
       -- write access? --
@@ -1976,7 +2001,7 @@ begin
 
           -- machine trap setup --
           -- --------------------------------------------------------------------
-          if (csr.addr(11 downto 4) = csr_class_setup_c) then -- ftrap setup CSR class
+          if (csr.addr(11 downto 4) = csr_class_setup_c) then -- trap setup CSR class
             -- R/W: mstatus - machine status register --
             if (csr.addr(3 downto 0) = csr_mstatus_c(3 downto 0)) then
               csr.mstatus_mie  <= csr.wdata(03);
@@ -2004,10 +2029,9 @@ begin
             -- R/W: machine counter enable register --
             if (CPU_EXTENSION_RISCV_U = true) then -- this CSR is hardwired to zero if user mode is not implemented
               if (csr.addr(3 downto 0) = csr_mcounteren_c(3 downto 0)) then
-                csr.mcounteren_cy  <= csr.wdata(0); -- enable user-level access to cycle[h]
-                csr.mcounteren_tm  <= csr.wdata(1); -- enable user-level access to time[h]
-                csr.mcounteren_ir  <= csr.wdata(2); -- enable user-level access to instret[h]
-                csr.mcounteren_hpm <= csr.wdata(csr.mcounteren_hpm'left+3 downto 3); -- enable user-level access to hpmcounterx[h]
+                csr.mcounteren_cy <= csr.wdata(0); -- enable user-level access to cycle[h]
+                csr.mcounteren_tm <= csr.wdata(1); -- enable user-level access to time[h]
+                csr.mcounteren_ir <= csr.wdata(2); -- enable user-level access to instret[h]
               end if;
             end if;
           end if;
@@ -2027,10 +2051,6 @@ begin
             if (csr.addr(3 downto 0) = csr_mcause_c(3 downto 0)) then
               csr.mcause(csr.mcause'left) <= csr.wdata(31); -- 1: interrupt, 0: exception
               csr.mcause(4 downto 0)      <= csr.wdata(4 downto 0); -- identifier
-            end if;
-            -- R/W: mtval - machine bad address/instruction --
-            if (csr.addr(3 downto 0) = csr_mtval_c(3 downto 0)) then
-              csr.mtval <= csr.wdata;
             end if;
           end if;
 
@@ -2089,6 +2109,33 @@ begin
             end if;
           end if;
 
+          -- debug mode CSRs --
+          -- --------------------------------------------------------------------
+          if (CPU_EXTENSION_RISCV_DEBUG = true) then
+            if (csr.addr(11 downto 2) = csr_class_debug_c) then -- debug CSR class
+              -- R/W: dcsr - debug mode control and status register --
+              if (csr.addr(1 downto 0) = csr_dcsr_c(1 downto 0)) then
+                csr.dcsr_ebreakm <= csr.wdata(15);
+                csr.dcsr_step    <= csr.wdata(2);
+                if (CPU_EXTENSION_RISCV_U = true) then -- user mode implemented
+                  csr.dcsr_ebreaku <= csr.wdata(12);
+                  csr.dcsr_prv(0)  <= csr.wdata(1) or csr.wdata(0);
+                  csr.dcsr_prv(1)  <= csr.wdata(1) or csr.wdata(0);
+                else -- only machine mode is available
+                  csr.dcsr_prv <= priv_mode_m_c;
+                end if;
+              end if;
+              -- R/W: dpc - debug mode program counter --
+              if (csr.addr(1 downto 0) = csr_dpc_c(1 downto 0)) then
+                csr.dpc <= csr.wdata;
+              end if;
+              -- R/W: dscratch0 - debug mode scratch register 0 --
+              if (csr.addr(1 downto 0) = csr_dscratch0_c(1 downto 0)) then
+                csr.dscratch0 <= csr.wdata;
+              end if;
+            end if;
+          end if;
+
 
         -- --------------------------------------------------------------------------------
         -- CSR access by hardware
@@ -2101,54 +2148,87 @@ begin
             csr.fflags <= csr.fflags or fpu_flags_i; -- accumulate flags ("accrued exception flags")
           end if;
 
-          -- mcause, mepc, mtval: machine trap cause, PC and value register --
+          -- mcause, mepc, mtval: write machine trap cause, PC and trap value register --
           -- --------------------------------------------------------------------
           if (trap_ctrl.env_start_ack = '1') then -- trap handler starting?
-            -- trap cause ID code --
-            csr.mcause(csr.mcause'left) <= trap_ctrl.cause(trap_ctrl.cause'left); -- 1: interrupt, 0: exception
-            csr.mcause(4 downto 0)      <= trap_ctrl.cause(4 downto 0); -- identifier
-            -- trap PC --
-            if (trap_ctrl.cause(trap_ctrl.cause'left) = '1') then -- for INTERRUPTS
-              csr.mepc <= execute_engine.pc(data_width_c-1 downto 1) & '0'; -- this is the CURRENT pc = interrupted instruction
-            else -- for sync. EXCEPTIONS
-              csr.mepc <= execute_engine.last_pc(data_width_c-1 downto 1) & '0'; -- this is the LAST pc = last executed instruction
+            if (CPU_EXTENSION_RISCV_DEBUG = false) or ((trap_ctrl.cause(5) = '0') and -- update mtval/mepc/mcause only when NOT ENTRY debug mode exception
+                                                       (debug_ctrl.running = '0')) then -- and NOT IN debug mode
+
+              -- trap cause ID code --
+              csr.mcause(csr.mcause'left) <= trap_ctrl.cause(trap_ctrl.cause'left); -- 1: interrupt, 0: exception
+              csr.mcause(4 downto 0)      <= trap_ctrl.cause(4 downto 0); -- identifier
+
+              -- trap PC --
+              if (trap_ctrl.cause(trap_ctrl.cause'left) = '1') then -- for INTERRUPTS (async source)
+                csr.mepc <= execute_engine.pc(data_width_c-1 downto 1) & '0'; -- this is the CURRENT pc = interrupted instruction
+              else -- for sync. EXCEPTIONS (sync source)
+                csr.mepc <= execute_engine.last_pc(data_width_c-1 downto 1) & '0'; -- this is the LAST pc = last executed instruction
+              end if;
+
+              -- trap value --
+              case trap_ctrl.cause is
+                when trap_ima_c | trap_iba_c => -- misaligned instruction address OR instruction access error
+                  csr.mtval <= execute_engine.pc(data_width_c-1 downto 1) & '0'; -- address of faulting instruction
+                when trap_brk_c => -- breakpoint
+                  csr.mtval <= execute_engine.last_pc(data_width_c-1 downto 1) & '0'; -- address of breakpoint instruction
+                when trap_lma_c | trap_lbe_c | trap_sma_c | trap_sbe_c => -- misaligned load/store address OR load/store access error
+                  csr.mtval <= mar_i; -- faulting data access address
+                when trap_iil_c => -- illegal instruction
+                  csr.mtval <= execute_engine.i_reg_last; -- faulting instruction itself
+                when others => -- everything else including all interrupts
+                  csr.mtval <= (others => '0');
+              end case;
+
             end if;
-            -- trap value --
-            case trap_ctrl.cause is
-              when trap_ima_c | trap_iba_c => -- misaligned instruction address OR instruction access error
-                csr.mtval <= execute_engine.pc(data_width_c-1 downto 1) & '0'; -- address of faulting instruction
-              when trap_brk_c => -- breakpoint
-                csr.mtval <= execute_engine.last_pc(data_width_c-1 downto 1) & '0'; -- address of breakpoint instruction
-              when trap_lma_c | trap_lbe_c | trap_sma_c | trap_sbe_c => -- misaligned load/store address OR load/store access error
-                csr.mtval <= mar_i; -- faulting data access address
-              when trap_iil_c => -- illegal instruction
-                csr.mtval <= execute_engine.i_reg_last; -- faulting instruction itself
-              when others => -- everything else including all interrupts
-                csr.mtval <= (others => '0');
-            end case;
+
+            -- DEBUG MODE (trap) enter: write dpc and dcsr --
+            -- --------------------------------------------------------------------
+            if (CPU_EXTENSION_RISCV_DEBUG = true) and (trap_ctrl.cause(5) = '1') and (debug_ctrl.running = '0') then -- debug mode entry exception
+
+              -- trap cause ID code --
+              csr.dcsr_cause <= trap_ctrl.cause(2 downto 0); -- why did we enter debug mode?
+              -- current privilege mode when debug mode was entered --
+              csr.dcsr_prv <= csr.privilege;
+
+              -- trap PC --
+              if (trap_ctrl.cause(trap_ctrl.cause'left) = '1') then -- for INTERRUPTS (async source)
+                csr.dpc <= execute_engine.pc(data_width_c-1 downto 1) & '0'; -- this is the CURRENT pc = interrupted instruction
+              else -- for sync. EXCEPTIONS (sync source)
+                csr.dpc <= execute_engine.last_pc(data_width_c-1 downto 1) & '0'; -- this is the LAST pc = last executed instruction
+              end if;
+
+            end if;
+
           end if;
 
           -- mstatus: context switch --
           -- --------------------------------------------------------------------
-          if (trap_ctrl.env_start_ack = '1') then -- ENTER: trap handler starting?
-            csr.mstatus_mie  <= '0'; -- disable interrupts
-            csr.mstatus_mpie <= csr.mstatus_mie; -- buffer previous mie state
-            if (CPU_EXTENSION_RISCV_U = true) then -- implement user mode
-              csr.privilege   <= priv_mode_m_c; -- execute trap in machine mode
-              csr.mstatus_mpp <= csr.privilege; -- buffer previous privilege mode
+          -- ENTER: trap handling starting?
+          if (trap_ctrl.env_start_ack = '1') then
+            if (CPU_EXTENSION_RISCV_DEBUG = false) or -- normal trapping (debug mode NOT implemented)
+               ((debug_ctrl.running = '0') and (trap_ctrl.cause(5) = '0')) then -- not IN debug mode and not ENTERING debug mode
+              csr.mstatus_mie  <= '0'; -- disable interrupts
+              csr.mstatus_mpie <= csr.mstatus_mie; -- buffer previous mie state
+              if (CPU_EXTENSION_RISCV_U = true) then -- implement user mode
+                csr.privilege   <= priv_mode_m_c; -- execute trap in machine mode
+                csr.mstatus_mpp <= csr.privilege; -- buffer previous privilege mode
+              end if;
             end if;
-          elsif (trap_ctrl.env_end = '1') then -- EXIT: return from exception
-            csr.mstatus_mie  <= csr.mstatus_mpie; -- restore global IRQ enable flag
-            csr.mstatus_mpie <= '1';
-            if (CPU_EXTENSION_RISCV_U = true) then -- implement user mode
-              csr.privilege   <= csr.mstatus_mpp; -- go back to previous privilege mode
-              csr.mstatus_mpp <= priv_mode_m_c;
+
+          -- EXIT: return from exception
+          elsif (trap_ctrl.env_end = '1') then
+            if (CPU_EXTENSION_RISCV_DEBUG = true) and (debug_ctrl.running = '1') then -- return from debug mode
+              if (CPU_EXTENSION_RISCV_U = true) then -- implement user mode
+                csr.privilege <= csr.dcsr_prv;
+              end if;
+            else -- return from "normal trap"
+              csr.mstatus_mie  <= csr.mstatus_mpie; -- restore global IRQ enable flag
+              csr.mstatus_mpie <= '1';
+              if (CPU_EXTENSION_RISCV_U = true) then -- implement user mode
+                csr.privilege   <= csr.mstatus_mpp; -- go back to previous privilege mode
+                csr.mstatus_mpp <= (others => '0');
+              end if;
             end if;
-          end if;
-          -- user mode NOT implemented --
-          if (CPU_EXTENSION_RISCV_U = false) then
-            csr.privilege   <= priv_mode_m_c;
-            csr.mstatus_mpp <= priv_mode_m_c;
           end if;
 
         end if; -- /hardware csr access
@@ -2160,12 +2240,13 @@ begin
 
       -- user mode disabled --
       if (CPU_EXTENSION_RISCV_U = false) then
-        csr.privilege      <= priv_mode_m_c;
-        csr.mstatus_mpp    <= priv_mode_m_c;
-        csr.mcounteren_cy  <= '0';
-        csr.mcounteren_tm  <= '0';
-        csr.mcounteren_ir  <= '0';
-        csr.mcounteren_hpm <= (others => '0');
+        csr.privilege     <= priv_mode_m_c;
+        csr.mstatus_mpp   <= priv_mode_m_c;
+        csr.mcounteren_cy <= '0';
+        csr.mcounteren_tm <= '0';
+        csr.mcounteren_ir <= '0';
+        csr.dcsr_ebreaku  <= '0';
+        csr.dcsr_prv      <= priv_mode_m_c;
       end if;
 
       -- pmp disabled --
@@ -2177,7 +2258,6 @@ begin
       -- hpms disabled --
       if (HPM_NUM_CNTS = 0) then
         csr.mhpmevent         <= (others => (others => '0'));
-        csr.mcounteren_hpm    <= (others => '0');
         csr.mcountinhibit_hpm <= (others => '0');
       end if;
 
@@ -2195,12 +2275,23 @@ begin
         csr.frm    <= (others => '0');
       end if;
 
+      -- debug mode disabled --
+      if (CPU_EXTENSION_RISCV_DEBUG = false) then
+        csr.dcsr_ebreakm <= '0';
+        csr.dcsr_ebreaku <= '0';
+        csr.dcsr_step    <= '0';
+        csr.dcsr_cause   <= (others => '0');
+        csr.dpc          <= (others => '0');
+        csr.dscratch0    <= (others => '0');
+      end if;
+
     end if;
   end process csr_write_access;
 
   -- decode current privilege mode --
-  csr.priv_m_mode <= '1' when (csr.privilege = priv_mode_m_c) else '0';
-  csr.priv_u_mode <= '1' when (csr.privilege = priv_mode_u_c) else '0';
+  csr.privilege_rd <= priv_mode_m_c when (CPU_EXTENSION_RISCV_DEBUG = true) and (debug_ctrl.running = '1') else csr.privilege; -- effective privilege mode ("machine" when in debug mode)
+  csr.priv_m_mode  <= '1' when (csr.privilege_rd = priv_mode_m_c) else '0';
+  csr.priv_u_mode  <= '1' when (csr.privilege_rd = priv_mode_u_c) and (CPU_EXTENSION_RISCV_U = true) else '0';
 
   -- PMP configuration output to bus unit --
   pmp_output: process(csr)
@@ -2227,9 +2318,6 @@ begin
     end if;
   end process pmp_rd_dummy;
 
-  -- FPU rounding mode --
-  fpu_rm_o <= csr.frm;
-
 
   -- Control and Status Registers - Counters ------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -2237,97 +2325,112 @@ begin
   begin
     -- Counter CSRs (each counter is split into two 32-bit counters - coupled via an MSB overflow detector)
     if (rstn_i = '0') then
-      csr.mcycle       <= (others => def_rst_val_c);
-      mcycle_msb       <= def_rst_val_c;
-      csr.mcycleh      <= (others => def_rst_val_c);
-      csr.minstret     <= (others => def_rst_val_c);
-      minstret_msb     <= def_rst_val_c;
-      csr.minstreth    <= (others => def_rst_val_c);
-      csr.mhpmcounter  <= (others => (others => def_rst_val_c));
-      mhpmcounter_msb  <= (others => def_rst_val_c);
-      csr.mhpmcounterh <= (others => (others => def_rst_val_c));
+      csr.mcycle           <= (others => def_rst_val_c);
+      csr.mcycle_ovfl      <= (others => def_rst_val_c);
+      csr.mcycleh          <= (others => def_rst_val_c);
+      csr.minstret         <= (others => def_rst_val_c);
+      csr.minstret_ovfl    <= (others => def_rst_val_c);
+      csr.minstreth        <= (others => def_rst_val_c);
+      csr.mhpmcounter      <= (others => (others => def_rst_val_c));
+      csr.mhpmcounter_ovfl <= (others => (others => def_rst_val_c));
+      csr.mhpmcounterh     <= (others => (others => def_rst_val_c));
     elsif rising_edge(clk_i) then
 
       -- [m]cycle --
-      csr.mcycle(csr.mcycle'left downto cpu_cnt_lo_width_c+1) <= (others => '0'); -- set unused bits to zero
-      if (cpu_cnt_lo_width_c = 0) then
-        csr.mcycle <= (others => '0');
-        mcycle_msb <= '0';
-      elsif (csr.we = '1') and (csr.addr = csr_mcycle_c) then -- write access
-        csr.mcycle(cpu_cnt_lo_width_c downto 0) <= '0' & csr.wdata(cpu_cnt_lo_width_c-1 downto 0);
-        mcycle_msb <= '0';
-      elsif (csr.mcountinhibit_cy = '0') and (cnt_event(hpmcnt_event_cy_c) = '1') then -- non-inhibited automatic update
-        csr.mcycle(cpu_cnt_lo_width_c downto 0) <= std_ulogic_vector(unsigned(csr.mcycle(cpu_cnt_lo_width_c downto 0)) + 1);
-        mcycle_msb <= csr.mcycle(cpu_cnt_lo_width_c);
+      if (cpu_cnt_lo_width_c > 0) then
+        csr.mcycle_ovfl(0) <= csr.mcycle_nxt(csr.mcycle_nxt'left);
+        if (csr.we = '1') and (csr.addr = csr_mcycle_c) then -- write access
+          csr.mcycle(cpu_cnt_lo_width_c-1 downto 0) <= csr.wdata(cpu_cnt_lo_width_c-1 downto 0);
+        elsif (csr.mcountinhibit_cy = '0') and (cnt_event(hpmcnt_event_cy_c) = '1') then -- non-inhibited automatic update
+          csr.mcycle(cpu_cnt_lo_width_c-1 downto 0) <= csr.mcycle_nxt(cpu_cnt_lo_width_c-1 downto 0);
+        end if;
+      else
+        csr.mcycle <= (others => '-');
+        csr.mcycle_ovfl(0) <= '-';
       end if;
 
       -- [m]cycleh --
-      csr.mcycleh(csr.mcycleh'left downto cpu_cnt_hi_width_c+1) <= (others => '0'); -- set unused bits to zero
-      if (cpu_cnt_hi_width_c = 0) then
-        csr.mcycleh <= (others => '0');
-      elsif (csr.we = '1') and (csr.addr = csr_mcycleh_c) then -- write access
-        csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0) <= csr.wdata(cpu_cnt_hi_width_c-1 downto 0);
-      elsif ((mcycle_msb xor csr.mcycle(cpu_cnt_lo_width_c)) = '1') then -- automatic update (continued)
-        csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0) <= std_ulogic_vector(unsigned(csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0)) + 1);
+      if (cpu_cnt_hi_width_c > 0) then
+        if (csr.we = '1') and (csr.addr = csr_mcycleh_c) then -- write access
+          csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0) <= csr.wdata(cpu_cnt_hi_width_c-1 downto 0);
+        elsif (csr.mcountinhibit_cy = '0') and (cnt_event(hpmcnt_event_cy_c) = '1') then -- non-inhibited automatic update
+          csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0) <= std_ulogic_vector(unsigned(csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0)) + unsigned(csr.mcycle_ovfl));
+        end if;
+      else
+        csr.mcycleh <= (others => '-');
       end if;
 
+
       -- [m]instret --
-      csr.minstret(csr.minstret'left downto cpu_cnt_lo_width_c+1) <= (others => '0'); -- set unused bits to zero
-      if (cpu_cnt_lo_width_c = 0) then
-        csr.minstret <= (others => '0');
-        minstret_msb <= '0';
-      elsif (csr.we = '1') and (csr.addr = csr_minstret_c) then -- write access
-        csr.minstret(cpu_cnt_lo_width_c downto 0) <= '0' & csr.wdata(cpu_cnt_lo_width_c-1 downto 0);
-        minstret_msb <= '0';
-      elsif (csr.mcountinhibit_ir = '0') and (cnt_event(hpmcnt_event_ir_c) = '1') then -- non-inhibited automatic update
-        csr.minstret(cpu_cnt_lo_width_c downto 0) <= std_ulogic_vector(unsigned(csr.minstret(cpu_cnt_lo_width_c downto 0)) + 1);
-        minstret_msb <= csr.minstret(csr.minstret'left);
+      if (cpu_cnt_lo_width_c > 0) then
+        csr.minstret_ovfl(0) <= csr.minstret_nxt(csr.minstret_nxt'left);
+        if (csr.we = '1') and (csr.addr = csr_minstret_c) then -- write access
+          csr.minstret(cpu_cnt_lo_width_c-1 downto 0) <= csr.wdata(cpu_cnt_lo_width_c-1 downto 0);
+        elsif (csr.mcountinhibit_ir = '0') and (cnt_event(hpmcnt_event_ir_c) = '1') then -- non-inhibited automatic update
+          csr.minstret(cpu_cnt_lo_width_c-1 downto 0) <= csr.minstret_nxt(cpu_cnt_lo_width_c-1 downto 0);
+        end if;
+      else
+        csr.minstret <= (others => '-');
+        csr.minstret_ovfl(0) <= '-';
       end if;
 
       -- [m]instreth --
-      csr.minstreth(csr.minstreth'left downto cpu_cnt_hi_width_c+1) <= (others => '0'); -- set unsued bits to zero
-      if (cpu_cnt_hi_width_c = 0) then
-        csr.minstreth <= (others => '0');
-      elsif (csr.we = '1') and (csr.addr = csr_minstreth_c) then -- write access
-        csr.minstreth(cpu_cnt_hi_width_c-1 downto 0) <= csr.wdata(cpu_cnt_hi_width_c-1 downto 0);
-      elsif ((minstret_msb xor csr.minstret(cpu_cnt_lo_width_c)) = '1') then -- automatic update (continued)
-        csr.minstreth(cpu_cnt_hi_width_c-1 downto 0) <= std_ulogic_vector(unsigned(csr.minstreth(cpu_cnt_hi_width_c-1 downto 0)) + 1);
+      if (cpu_cnt_hi_width_c > 0) then
+        if (csr.we = '1') and (csr.addr = csr_minstreth_c) then -- write access
+          csr.minstreth(cpu_cnt_hi_width_c-1 downto 0) <= csr.wdata(cpu_cnt_hi_width_c-1 downto 0);
+        elsif (csr.mcountinhibit_ir = '0') and (cnt_event(hpmcnt_event_ir_c) = '1') then -- non-inhibited automatic update
+          csr.minstreth(cpu_cnt_hi_width_c-1 downto 0) <= std_ulogic_vector(unsigned(csr.minstreth(cpu_cnt_hi_width_c-1 downto 0)) + unsigned(csr.minstret_ovfl));
+        end if;
+      else
+        csr.minstreth <= (others => '-');
       end if;
+
 
       -- [machine] hardware performance monitors (counters) --
       for i in 0 to HPM_NUM_CNTS-1 loop
-        csr.mhpmcounter(i)(csr.mhpmcounter(i)'left downto hpm_cnt_lo_width_c+1) <= (others => '0'); -- set unused bits to zero
-        if (hpm_cnt_lo_width_c = 0) then
-          csr.mhpmcounter(i) <= (others => '0');
-          mhpmcounter_msb(i) <= '0';
-        else
-          -- [m]hpmcounter* --
+
+        -- [m]hpmcounter* --
+        if (hpm_cnt_lo_width_c > 0) then
+          csr.mhpmcounter_ovfl(i)(0) <= csr.mhpmcounter_nxt(i)(csr.mhpmcounter_nxt(i)'left);
           if (csr.we = '1') and (csr.addr = std_ulogic_vector(unsigned(csr_mhpmcounter3_c) + i)) then -- write access
-            csr.mhpmcounter(i)(hpm_cnt_lo_width_c downto 0) <= '0' & csr.wdata(hpm_cnt_lo_width_c-1 downto 0);
-            mhpmcounter_msb(i) <= '0';
+            csr.mhpmcounter(i)(hpm_cnt_lo_width_c-1 downto 0) <= csr.wdata(hpm_cnt_lo_width_c-1 downto 0);
           elsif (csr.mcountinhibit_hpm(i) = '0') and (hpmcnt_trigger(i) = '1') then -- non-inhibited automatic update
-            csr.mhpmcounter(i)(hpm_cnt_lo_width_c downto 0) <= std_ulogic_vector(unsigned(csr.mhpmcounter(i)(hpm_cnt_lo_width_c downto 0)) + 1);
-            mhpmcounter_msb(i) <= csr.mhpmcounter(i)(csr.mhpmcounter(i)'left);
+            csr.mhpmcounter(i)(hpm_cnt_lo_width_c-1 downto 0) <= csr.mhpmcounter_nxt(i)(hpm_cnt_lo_width_c-1 downto 0);
           end if;
+        else
+          csr.mhpmcounter(i) <= (others => '-');
+          csr.mhpmcounter_ovfl(i)(0) <= '-';
         end if;
 
         -- [m]hpmcounter*h --
-        csr.mhpmcounterh(i)(csr.mhpmcounterh(i)'left downto hpm_cnt_hi_width_c+1) <= (others => '0'); -- set unused bits to zero
-        if (hpm_cnt_hi_width_c = 0) then
-          csr.mhpmcounterh(i) <= (others => '0');
-        else
+        if (hpm_cnt_hi_width_c > 0) then
           if (csr.we = '1') and (csr.addr = std_ulogic_vector(unsigned(csr_mhpmcounter3h_c) + i)) then -- write access
             csr.mhpmcounterh(i)(hpm_cnt_hi_width_c-1 downto 0) <= csr.wdata(hpm_cnt_hi_width_c-1 downto 0);
-          elsif ((mhpmcounter_msb(i) xor csr.mhpmcounter(i)(hpm_cnt_lo_width_c)) = '1') then -- automatic update (continued)
-            csr.mhpmcounterh(i)(hpm_cnt_hi_width_c-1 downto 0) <= std_ulogic_vector(unsigned(csr.mhpmcounterh(i)(hpm_cnt_hi_width_c-1 downto 0)) + 1);
+          elsif (csr.mcountinhibit_hpm(i) = '0') and (hpmcnt_trigger(i) = '1') then -- non-inhibited automatic update
+            csr.mhpmcounterh(i)(hpm_cnt_hi_width_c-1 downto 0) <= std_ulogic_vector(unsigned(csr.mhpmcounterh(i)(hpm_cnt_hi_width_c-1 downto 0)) + unsigned(csr.mhpmcounter_ovfl(i)));
           end if;
+        else
+          csr.mhpmcounterh(i) <= (others => '-');
         end if;
+
       end loop; -- i
 
     end if;
   end process csr_counters;
 
-  -- hpm counters read dummy --
+
+  -- mcycle & minstret increment LOW --
+  csr.mcycle_nxt   <= std_ulogic_vector(unsigned('0' & csr.mcycle) + 1);
+  csr.minstret_nxt <= std_ulogic_vector(unsigned('0' & csr.minstret) + 1);
+
+  -- hpm counter increment LOW --
+  hmp_cnt_lo_inc:
+  for i in 0 to HPM_NUM_CNTS-1 generate
+    csr.mhpmcounter_nxt(i) <= std_ulogic_vector(unsigned('0' & csr.mhpmcounter(i)) + 1);
+  end generate;
+
+
+  -- hpm counter read --
   hpm_rd_dummy: process(csr)
   begin
     csr.mhpmcounter_rd  <= (others => (others => '0'));
@@ -2335,7 +2438,7 @@ begin
     if (HPM_NUM_CNTS /= 0) then
       for i in 0 to HPM_NUM_CNTS-1 loop
         if (hpm_cnt_lo_width_c > 0) then
-          csr.mhpmcounter_rd(i)(hpm_cnt_lo_width_c-1 downto 0)  <= csr.mhpmcounter(i)(hpm_cnt_lo_width_c-1 downto 0);
+          csr.mhpmcounter_rd(i)(hpm_cnt_lo_width_c-1 downto 0) <= csr.mhpmcounter(i)(hpm_cnt_lo_width_c-1 downto 0);
         end if;
         if (hpm_cnt_hi_width_c > 0) then
           csr.mhpmcounterh_rd(i)(hpm_cnt_hi_width_c-1 downto 0) <= csr.mhpmcounterh(i)(hpm_cnt_hi_width_c-1 downto 0);
@@ -2360,7 +2463,7 @@ begin
       hpmcnt_trigger <= (others => '0'); -- default
       if (HPM_NUM_CNTS /= 0) then
         for i in 0 to HPM_NUM_CNTS-1 loop
-          hpmcnt_trigger(i) <= or_all_f(cnt_event and csr.mhpmevent(i)(cnt_event'left downto 0));
+          hpmcnt_trigger(i) <= or_reduce_f(cnt_event and csr.mhpmevent(i)(cnt_event'left downto 0));
         end loop; -- i
       end if;
     end if;
@@ -2393,10 +2496,7 @@ begin
   -- -------------------------------------------------------------------------------------------
   csr_read_access: process(rstn_i, clk_i)
   begin
-    if (rstn_i = '0') then
-      csr.re    <= def_rst_val_c;
-      csr.rdata <= (others => def_rst_val_c);
-    elsif rising_edge(clk_i) then
+    if rising_edge(clk_i) then
       csr.re    <= csr.re_nxt; -- read access?
       csr.rdata <= (others => '0'); -- default output
       if (CPU_EXTENSION_RISCV_Zicsr = true) and (csr.re = '1') then
@@ -2404,38 +2504,22 @@ begin
 
           -- floating-point CSRs --
           -- --------------------------------------------------------------------
-          when csr_fflags_c => -- R/W: fflags - floating-point (FPU) exception flags
-            if (CPU_EXTENSION_RISCV_Zfinx = true) then -- FPU implemented
-              csr.rdata(4 downto 0) <= csr.fflags;
-            else
-              NULL;
-            end if;
-          when csr_frm_c => -- R/W: frm - floating-point (FPU) rounding mode
-            if (CPU_EXTENSION_RISCV_Zfinx = true) then -- FPU implemented
-              csr.rdata(2 downto 0) <= csr.frm;
-            else
-              NULL;
-            end if;
-          when csr_fcsr_c => -- R/W: fcsr - floating-point (FPU) control/status (frm + fflags)
-            if (CPU_EXTENSION_RISCV_Zfinx = true) then -- FPU implemented
-              csr.rdata(7 downto 5) <= csr.frm;
-              csr.rdata(4 downto 0) <= csr.fflags;
-            else
-              NULL;
-            end if;
+          when csr_fflags_c => -- fflags (r/w): floating-point (FPU) exception flags
+            if (CPU_EXTENSION_RISCV_Zfinx = true) then csr.rdata(4 downto 0) <= csr.fflags; else NULL; end if;
+          when csr_frm_c => -- frm (r/w): floating-point (FPU) rounding mode
+            if (CPU_EXTENSION_RISCV_Zfinx = true) then csr.rdata(2 downto 0) <= csr.frm; else NULL; end if;
+          when csr_fcsr_c => -- fcsr (r/w): floating-point (FPU) control/status (frm + fflags)
+            if (CPU_EXTENSION_RISCV_Zfinx = true) then csr.rdata(7 downto 5) <= csr.frm; csr.rdata(4 downto 0) <= csr.fflags; else NULL; end if;
 
           -- machine trap setup --
-          when csr_mstatus_c => -- R/W: mstatus - machine status register
+          -- --------------------------------------------------------------------
+          when csr_mstatus_c => -- mstatus (r/w): machine status register
             csr.rdata(03) <= csr.mstatus_mie; -- MIE
-            csr.rdata(06) <= '1' and bool_to_ulogic_f(CPU_EXTENSION_RISCV_U); -- UBE: CPU/Processor is BIG-ENDIAN (in user-mode)
             csr.rdata(07) <= csr.mstatus_mpie; -- MPIE
             csr.rdata(11) <= csr.mstatus_mpp(0); -- MPP: machine previous privilege mode low
             csr.rdata(12) <= csr.mstatus_mpp(1); -- MPP: machine previous privilege mode high
-          when csr_mstatush_c => -- R/-: mstatush - machine status register - high part
-            csr.rdata(05) <= '1'; -- MBE: CPU/Processor is BIG-ENDIAN (in machine-mode)
-          when csr_misa_c => -- R/-: misa - ISA and extensions
+          when csr_misa_c => -- misa (r/-): ISA and extensions
             csr.rdata(00) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_A);     -- A CPU extension
-            csr.rdata(01) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_B);     -- B CPU extension
             csr.rdata(02) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_C);     -- C CPU extension
             csr.rdata(04) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_E);     -- E CPU extension
             csr.rdata(08) <= not bool_to_ulogic_f(CPU_EXTENSION_RISCV_E); -- I CPU extension (if not E)
@@ -2444,36 +2528,36 @@ begin
             csr.rdata(23) <= '1';                                         -- X CPU extension (non-std extensions)
             csr.rdata(30) <= '1'; -- 32-bit architecture (MXL lo)
             csr.rdata(31) <= '0'; -- 32-bit architecture (MXL hi)
-          when csr_mie_c => -- R/W: mie - machine interrupt-enable register
+          when csr_mie_c => -- mie (r/w): machine interrupt-enable register
             csr.rdata(03) <= csr.mie_msie; -- machine software IRQ enable
             csr.rdata(07) <= csr.mie_mtie; -- machine timer IRQ enable
             csr.rdata(11) <= csr.mie_meie; -- machine external IRQ enable
             for i in 0 to 15 loop -- fast interrupt channels 0..15 enable
               csr.rdata(16+i) <= csr.mie_firqe(i);
             end loop; -- i
-          when csr_mtvec_c => -- R/W: mtvec - machine trap-handler base address (for ALL exceptions)
+          when csr_mtvec_c => -- mtvec (r/w): machine trap-handler base address (for ALL exceptions)
             csr.rdata <= csr.mtvec(data_width_c-1 downto 2) & "00"; -- mtvec.MODE=0
-          when csr_mcounteren_c => -- R/W: machine counter enable register
+          when csr_mcounteren_c => -- mcounteren (r/w): machine counter enable register
             if (CPU_EXTENSION_RISCV_U = false) then -- this CSR is hardwired to zero if user mode is not implemented
               NULL;
             else
               csr.rdata(0) <= csr.mcounteren_cy; -- enable user-level access to cycle[h]
               csr.rdata(1) <= csr.mcounteren_tm; -- enable user-level access to time[h]
               csr.rdata(2) <= csr.mcounteren_ir; -- enable user-level access to instret[h]
-              csr.rdata(csr.mcounteren_hpm'left+3 downto 3) <= csr.mcounteren_hpm; -- enable user-level access to hpmcounterx[h]
             end if;
 
           -- machine trap handling --
-          when csr_mscratch_c => -- R/W: mscratch - machine scratch register
+          -- --------------------------------------------------------------------
+          when csr_mscratch_c => -- mscratch (r/w): machine scratch register
             csr.rdata <= csr.mscratch;
-          when csr_mepc_c => -- R/W: mepc - machine exception program counter
+          when csr_mepc_c => -- mepc (r/w): machine exception program counter
             csr.rdata <= csr.mepc(data_width_c-1 downto 1) & '0';
-          when csr_mcause_c => -- R/W: mcause - machine trap cause
+          when csr_mcause_c => -- mcause (r/w): machine trap cause
             csr.rdata(31) <= csr.mcause(csr.mcause'left);
             csr.rdata(csr.mcause'left-1 downto 0) <= csr.mcause(csr.mcause'left-1 downto 0);
-          when csr_mtval_c => -- R/W: mtval - machine bad address or instruction
+          when csr_mtval_c => -- mtval (r/w): machine bad address or instruction
             csr.rdata <= csr.mtval;
-          when csr_mip_c => -- R/-: mip - machine interrupt pending
+          when csr_mip_c => -- mip (r/-): machine interrupt pending
             csr.rdata(03) <= trap_ctrl.irq_buf(interrupt_msw_irq_c);
             csr.rdata(07) <= trap_ctrl.irq_buf(interrupt_mtime_irq_c);
             csr.rdata(11) <= trap_ctrl.irq_buf(interrupt_mext_irq_c);
@@ -2482,6 +2566,7 @@ begin
             end loop; -- i
 
           -- physical memory protection - configuration --
+          -- --------------------------------------------------------------------
           when csr_pmpcfg0_c  => if (PMP_NUM_REGIONS > 00) then csr.rdata <= csr.pmpcfg_rd(03) & csr.pmpcfg_rd(02) & csr.pmpcfg_rd(01) & csr.pmpcfg_rd(00); else NULL; end if; -- R/W: pmpcfg0
           when csr_pmpcfg1_c  => if (PMP_NUM_REGIONS > 03) then csr.rdata <= csr.pmpcfg_rd(07) & csr.pmpcfg_rd(06) & csr.pmpcfg_rd(05) & csr.pmpcfg_rd(04); else NULL; end if; -- R/W: pmpcfg1
           when csr_pmpcfg2_c  => if (PMP_NUM_REGIONS > 07) then csr.rdata <= csr.pmpcfg_rd(11) & csr.pmpcfg_rd(10) & csr.pmpcfg_rd(09) & csr.pmpcfg_rd(08); else NULL; end if; -- R/W: pmpcfg2
@@ -2500,6 +2585,7 @@ begin
           when csr_pmpcfg15_c => if (PMP_NUM_REGIONS > 59) then csr.rdata <= csr.pmpcfg_rd(63) & csr.pmpcfg_rd(62) & csr.pmpcfg_rd(61) & csr.pmpcfg_rd(60); else NULL; end if; -- R/W: pmpcfg15
 
           -- physical memory protection - addresses --
+          -- --------------------------------------------------------------------
           when csr_pmpaddr0_c  => if (PMP_NUM_REGIONS > 00) then csr.rdata <= csr.pmpaddr(00); else NULL; end if; -- R/W: pmpaddr0
           when csr_pmpaddr1_c  => if (PMP_NUM_REGIONS > 01) then csr.rdata <= csr.pmpaddr(01); else NULL; end if; -- R/W: pmpaddr1
           when csr_pmpaddr2_c  => if (PMP_NUM_REGIONS > 02) then csr.rdata <= csr.pmpaddr(02); else NULL; end if; -- R/W: pmpaddr2
@@ -2567,12 +2653,13 @@ begin
 
           -- machine counter setup --
           -- --------------------------------------------------------------------
-          when csr_mcountinhibit_c => -- R/W: mcountinhibit - machine counter-inhibit register
+          when csr_mcountinhibit_c => -- mcountinhibit (r/w): machine counter-inhibit register
             csr.rdata(0) <= csr.mcountinhibit_cy; -- enable auto-increment of [m]cycle[h] counter
             csr.rdata(2) <= csr.mcountinhibit_ir; -- enable auto-increment of [m]instret[h] counter
             csr.rdata(csr.mcountinhibit_hpm'left+3 downto 3) <= csr.mcountinhibit_hpm; -- enable auto-increment of [m]hpmcounterx[h] counter
 
           -- machine performance-monitoring event selector --
+          -- --------------------------------------------------------------------
           when csr_mhpmevent3_c  => if (HPM_NUM_CNTS > 00) then csr.rdata(hpmcnt_event_size_c-1 downto 0) <= csr.mhpmevent(00); else NULL; end if; -- R/W: mhpmevent3
           when csr_mhpmevent4_c  => if (HPM_NUM_CNTS > 01) then csr.rdata(hpmcnt_event_size_c-1 downto 0) <= csr.mhpmevent(01); else NULL; end if; -- R/W: mhpmevent4
           when csr_mhpmevent5_c  => if (HPM_NUM_CNTS > 02) then csr.rdata(hpmcnt_event_size_c-1 downto 0) <= csr.mhpmevent(02); else NULL; end if; -- R/W: mhpmevent5
@@ -2604,99 +2691,94 @@ begin
           when csr_mhpmevent31_c => if (HPM_NUM_CNTS > 28) then csr.rdata(hpmcnt_event_size_c-1 downto 0) <= csr.mhpmevent(28); else NULL; end if; -- R/W: mhpmevent31
 
           -- counters and timers --
-          when csr_cycle_c | csr_mcycle_c => -- (R)/(W): [m]cycle: Cycle counter LOW
+          -- --------------------------------------------------------------------
+          when csr_cycle_c | csr_mcycle_c => -- [m]cycle (r/w): Cycle counter LOW
             if (cpu_cnt_lo_width_c > 0) then csr.rdata(cpu_cnt_lo_width_c-1 downto 0) <= csr.mcycle(cpu_cnt_lo_width_c-1 downto 0); else NULL; end if;
-          when csr_cycleh_c | csr_mcycleh_c => -- (R)/(W): [m]cycleh: Cycle counter HIGH
+          when csr_cycleh_c | csr_mcycleh_c => -- [m]cycleh (r/w): Cycle counter HIGH
             if (cpu_cnt_hi_width_c > 0) then csr.rdata(cpu_cnt_hi_width_c-1 downto 0) <= csr.mcycleh(cpu_cnt_hi_width_c-1 downto 0); else NULL; end if;
 
-          when csr_instret_c | csr_minstret_c => -- (R)/(W): [m]instret: Instructions-retired counter LOW
+          when csr_instret_c | csr_minstret_c => -- [m]instret (r/w): Instructions-retired counter LOW
             if (cpu_cnt_lo_width_c > 0) then csr.rdata(cpu_cnt_lo_width_c-1 downto 0) <= csr.minstret(cpu_cnt_lo_width_c-1 downto 0); else NULL; end if;
-          when csr_instreth_c | csr_minstreth_c => -- (R)/(W): [m]instreth: Instructions-retired counter HIGH
+          when csr_instreth_c | csr_minstreth_c => -- [m]instreth (r/w): Instructions-retired counter HIGH
             if (cpu_cnt_hi_width_c > 0) then csr.rdata(cpu_cnt_hi_width_c-1 downto 0) <= csr.minstreth(cpu_cnt_hi_width_c-1 downto 0); else NULL; end if;
 
-          when csr_time_c => -- (R)/-: time: System time LOW (from MTIME unit)
-            csr.rdata <= time_i(31 downto 0);
-          when csr_timeh_c => -- (R)/-: timeh: System time HIGH (from MTIME unit)
-            csr.rdata <= time_i(63 downto 32);
+          when csr_time_c  => csr.rdata <= time_i(31 downto 0); -- time (r/-): System time LOW (from MTIME unit)
+          when csr_timeh_c => csr.rdata <= time_i(63 downto 32); -- timeh (r/-): System time HIGH (from MTIME unit)
 
           -- hardware performance counters --
-          when csr_hpmcounter3_c   | csr_mhpmcounter3_c   => if (HPM_NUM_CNTS > 00) then csr.rdata <= csr.mhpmcounter_rd(00); else NULL; end if; -- (R)/(W): [m]hpmcounter3 - low
-          when csr_hpmcounter4_c   | csr_mhpmcounter4_c   => if (HPM_NUM_CNTS > 01) then csr.rdata <= csr.mhpmcounter_rd(01); else NULL; end if; -- (R)/(W): [m]hpmcounter4 - low
-          when csr_hpmcounter5_c   | csr_mhpmcounter5_c   => if (HPM_NUM_CNTS > 02) then csr.rdata <= csr.mhpmcounter_rd(02); else NULL; end if; -- (R)/(W): [m]hpmcounter5 - low
-          when csr_hpmcounter6_c   | csr_mhpmcounter6_c   => if (HPM_NUM_CNTS > 03) then csr.rdata <= csr.mhpmcounter_rd(03); else NULL; end if; -- (R)/(W): [m]hpmcounter6 - low
-          when csr_hpmcounter7_c   | csr_mhpmcounter7_c   => if (HPM_NUM_CNTS > 04) then csr.rdata <= csr.mhpmcounter_rd(04); else NULL; end if; -- (R)/(W): [m]hpmcounter7 - low
-          when csr_hpmcounter8_c   | csr_mhpmcounter8_c   => if (HPM_NUM_CNTS > 05) then csr.rdata <= csr.mhpmcounter_rd(05); else NULL; end if; -- (R)/(W): [m]hpmcounter8 - low
-          when csr_hpmcounter9_c   | csr_mhpmcounter9_c   => if (HPM_NUM_CNTS > 06) then csr.rdata <= csr.mhpmcounter_rd(06); else NULL; end if; -- (R)/(W): [m]hpmcounter9 - low
-          when csr_hpmcounter10_c  | csr_mhpmcounter10_c  => if (HPM_NUM_CNTS > 07) then csr.rdata <= csr.mhpmcounter_rd(07); else NULL; end if; -- (R)/(W): [m]hpmcounter10 - low
-          when csr_hpmcounter11_c  | csr_mhpmcounter11_c  => if (HPM_NUM_CNTS > 08) then csr.rdata <= csr.mhpmcounter_rd(08); else NULL; end if; -- (R)/(W): [m]hpmcounter11 - low
-          when csr_hpmcounter12_c  | csr_mhpmcounter12_c  => if (HPM_NUM_CNTS > 09) then csr.rdata <= csr.mhpmcounter_rd(09); else NULL; end if; -- (R)/(W): [m]hpmcounter12 - low
-          when csr_hpmcounter13_c  | csr_mhpmcounter13_c  => if (HPM_NUM_CNTS > 10) then csr.rdata <= csr.mhpmcounter_rd(10); else NULL; end if; -- (R)/(W): [m]hpmcounter13 - low
-          when csr_hpmcounter14_c  | csr_mhpmcounter14_c  => if (HPM_NUM_CNTS > 11) then csr.rdata <= csr.mhpmcounter_rd(11); else NULL; end if; -- (R)/(W): [m]hpmcounter14 - low
-          when csr_hpmcounter15_c  | csr_mhpmcounter15_c  => if (HPM_NUM_CNTS > 12) then csr.rdata <= csr.mhpmcounter_rd(12); else NULL; end if; -- (R)/(W): [m]hpmcounter15 - low
-          when csr_hpmcounter16_c  | csr_mhpmcounter16_c  => if (HPM_NUM_CNTS > 13) then csr.rdata <= csr.mhpmcounter_rd(13); else NULL; end if; -- (R)/(W): [m]hpmcounter16 - low
-          when csr_hpmcounter17_c  | csr_mhpmcounter17_c  => if (HPM_NUM_CNTS > 14) then csr.rdata <= csr.mhpmcounter_rd(14); else NULL; end if; -- (R)/(W): [m]hpmcounter17 - low
-          when csr_hpmcounter18_c  | csr_mhpmcounter18_c  => if (HPM_NUM_CNTS > 15) then csr.rdata <= csr.mhpmcounter_rd(15); else NULL; end if; -- (R)/(W): [m]hpmcounter18 - low
-          when csr_hpmcounter19_c  | csr_mhpmcounter19_c  => if (HPM_NUM_CNTS > 16) then csr.rdata <= csr.mhpmcounter_rd(16); else NULL; end if; -- (R)/(W): [m]hpmcounter19 - low
-          when csr_hpmcounter20_c  | csr_mhpmcounter20_c  => if (HPM_NUM_CNTS > 17) then csr.rdata <= csr.mhpmcounter_rd(17); else NULL; end if; -- (R)/(W): [m]hpmcounter20 - low
-          when csr_hpmcounter21_c  | csr_mhpmcounter21_c  => if (HPM_NUM_CNTS > 18) then csr.rdata <= csr.mhpmcounter_rd(18); else NULL; end if; -- (R)/(W): [m]hpmcounter21 - low
-          when csr_hpmcounter22_c  | csr_mhpmcounter22_c  => if (HPM_NUM_CNTS > 19) then csr.rdata <= csr.mhpmcounter_rd(19); else NULL; end if; -- (R)/(W): [m]hpmcounter22 - low
-          when csr_hpmcounter23_c  | csr_mhpmcounter23_c  => if (HPM_NUM_CNTS > 20) then csr.rdata <= csr.mhpmcounter_rd(20); else NULL; end if; -- (R)/(W): [m]hpmcounter23 - low
-          when csr_hpmcounter24_c  | csr_mhpmcounter24_c  => if (HPM_NUM_CNTS > 21) then csr.rdata <= csr.mhpmcounter_rd(21); else NULL; end if; -- (R)/(W): [m]hpmcounter24 - low
-          when csr_hpmcounter25_c  | csr_mhpmcounter25_c  => if (HPM_NUM_CNTS > 22) then csr.rdata <= csr.mhpmcounter_rd(22); else NULL; end if; -- (R)/(W): [m]hpmcounter25 - low
-          when csr_hpmcounter26_c  | csr_mhpmcounter26_c  => if (HPM_NUM_CNTS > 23) then csr.rdata <= csr.mhpmcounter_rd(23); else NULL; end if; -- (R)/(W): [m]hpmcounter26 - low
-          when csr_hpmcounter27_c  | csr_mhpmcounter27_c  => if (HPM_NUM_CNTS > 24) then csr.rdata <= csr.mhpmcounter_rd(24); else NULL; end if; -- (R)/(W): [m]hpmcounter27 - low
-          when csr_hpmcounter28_c  | csr_mhpmcounter28_c  => if (HPM_NUM_CNTS > 25) then csr.rdata <= csr.mhpmcounter_rd(25); else NULL; end if; -- (R)/(W): [m]hpmcounter28 - low
-          when csr_hpmcounter29_c  | csr_mhpmcounter29_c  => if (HPM_NUM_CNTS > 26) then csr.rdata <= csr.mhpmcounter_rd(26); else NULL; end if; -- (R)/(W): [m]hpmcounter29 - low
-          when csr_hpmcounter30_c  | csr_mhpmcounter30_c  => if (HPM_NUM_CNTS > 27) then csr.rdata <= csr.mhpmcounter_rd(27); else NULL; end if; -- (R)/(W): [m]hpmcounter30 - low
-          when csr_hpmcounter31_c  | csr_mhpmcounter31_c  => if (HPM_NUM_CNTS > 28) then csr.rdata <= csr.mhpmcounter_rd(28); else NULL; end if; -- (R)/(W): [m]hpmcounter31 - low
+          -- --------------------------------------------------------------------
+          when csr_mhpmcounter3_c   => if (HPM_NUM_CNTS > 00) then csr.rdata <= csr.mhpmcounter_rd(00); else NULL; end if; -- r/w: mhpmcounter3 - low
+          when csr_mhpmcounter4_c   => if (HPM_NUM_CNTS > 01) then csr.rdata <= csr.mhpmcounter_rd(01); else NULL; end if; -- r/w: mhpmcounter4 - low
+          when csr_mhpmcounter5_c   => if (HPM_NUM_CNTS > 02) then csr.rdata <= csr.mhpmcounter_rd(02); else NULL; end if; -- r/w: mhpmcounter5 - low
+          when csr_mhpmcounter6_c   => if (HPM_NUM_CNTS > 03) then csr.rdata <= csr.mhpmcounter_rd(03); else NULL; end if; -- r/w: mhpmcounter6 - low
+          when csr_mhpmcounter7_c   => if (HPM_NUM_CNTS > 04) then csr.rdata <= csr.mhpmcounter_rd(04); else NULL; end if; -- r/w: mhpmcounter7 - low
+          when csr_mhpmcounter8_c   => if (HPM_NUM_CNTS > 05) then csr.rdata <= csr.mhpmcounter_rd(05); else NULL; end if; -- r/w: mhpmcounter8 - low
+          when csr_mhpmcounter9_c   => if (HPM_NUM_CNTS > 06) then csr.rdata <= csr.mhpmcounter_rd(06); else NULL; end if; -- r/w: mhpmcounter9 - low
+          when csr_mhpmcounter10_c  => if (HPM_NUM_CNTS > 07) then csr.rdata <= csr.mhpmcounter_rd(07); else NULL; end if; -- r/w: mhpmcounter10 - low
+          when csr_mhpmcounter11_c  => if (HPM_NUM_CNTS > 08) then csr.rdata <= csr.mhpmcounter_rd(08); else NULL; end if; -- r/w: mhpmcounter11 - low
+          when csr_mhpmcounter12_c  => if (HPM_NUM_CNTS > 09) then csr.rdata <= csr.mhpmcounter_rd(09); else NULL; end if; -- r/w: mhpmcounter12 - low
+          when csr_mhpmcounter13_c  => if (HPM_NUM_CNTS > 10) then csr.rdata <= csr.mhpmcounter_rd(10); else NULL; end if; -- r/w: mhpmcounter13 - low
+          when csr_mhpmcounter14_c  => if (HPM_NUM_CNTS > 11) then csr.rdata <= csr.mhpmcounter_rd(11); else NULL; end if; -- r/w: mhpmcounter14 - low
+          when csr_mhpmcounter15_c  => if (HPM_NUM_CNTS > 12) then csr.rdata <= csr.mhpmcounter_rd(12); else NULL; end if; -- r/w: mhpmcounter15 - low
+          when csr_mhpmcounter16_c  => if (HPM_NUM_CNTS > 13) then csr.rdata <= csr.mhpmcounter_rd(13); else NULL; end if; -- r/w: mhpmcounter16 - low
+          when csr_mhpmcounter17_c  => if (HPM_NUM_CNTS > 14) then csr.rdata <= csr.mhpmcounter_rd(14); else NULL; end if; -- r/w: mhpmcounter17 - low
+          when csr_mhpmcounter18_c  => if (HPM_NUM_CNTS > 15) then csr.rdata <= csr.mhpmcounter_rd(15); else NULL; end if; -- r/w: mhpmcounter18 - low
+          when csr_mhpmcounter19_c  => if (HPM_NUM_CNTS > 16) then csr.rdata <= csr.mhpmcounter_rd(16); else NULL; end if; -- r/w: mhpmcounter19 - low
+          when csr_mhpmcounter20_c  => if (HPM_NUM_CNTS > 17) then csr.rdata <= csr.mhpmcounter_rd(17); else NULL; end if; -- r/w: mhpmcounter20 - low
+          when csr_mhpmcounter21_c  => if (HPM_NUM_CNTS > 18) then csr.rdata <= csr.mhpmcounter_rd(18); else NULL; end if; -- r/w: mhpmcounter21 - low
+          when csr_mhpmcounter22_c  => if (HPM_NUM_CNTS > 19) then csr.rdata <= csr.mhpmcounter_rd(19); else NULL; end if; -- r/w: mhpmcounter22 - low
+          when csr_mhpmcounter23_c  => if (HPM_NUM_CNTS > 20) then csr.rdata <= csr.mhpmcounter_rd(20); else NULL; end if; -- r/w: mhpmcounter23 - low
+          when csr_mhpmcounter24_c  => if (HPM_NUM_CNTS > 21) then csr.rdata <= csr.mhpmcounter_rd(21); else NULL; end if; -- r/w: mhpmcounter24 - low
+          when csr_mhpmcounter25_c  => if (HPM_NUM_CNTS > 22) then csr.rdata <= csr.mhpmcounter_rd(22); else NULL; end if; -- r/w: mhpmcounter25 - low
+          when csr_mhpmcounter26_c  => if (HPM_NUM_CNTS > 23) then csr.rdata <= csr.mhpmcounter_rd(23); else NULL; end if; -- r/w: mhpmcounter26 - low
+          when csr_mhpmcounter27_c  => if (HPM_NUM_CNTS > 24) then csr.rdata <= csr.mhpmcounter_rd(24); else NULL; end if; -- r/w: mhpmcounter27 - low
+          when csr_mhpmcounter28_c  => if (HPM_NUM_CNTS > 25) then csr.rdata <= csr.mhpmcounter_rd(25); else NULL; end if; -- r/w: mhpmcounter28 - low
+          when csr_mhpmcounter29_c  => if (HPM_NUM_CNTS > 26) then csr.rdata <= csr.mhpmcounter_rd(26); else NULL; end if; -- r/w: mhpmcounter29 - low
+          when csr_mhpmcounter30_c  => if (HPM_NUM_CNTS > 27) then csr.rdata <= csr.mhpmcounter_rd(27); else NULL; end if; -- r/w: mhpmcounter30 - low
+          when csr_mhpmcounter31_c  => if (HPM_NUM_CNTS > 28) then csr.rdata <= csr.mhpmcounter_rd(28); else NULL; end if; -- r/w: mhpmcounter31 - low
 
-          when csr_hpmcounter3h_c  | csr_mhpmcounter3h_c  => if (HPM_NUM_CNTS > 00) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(00); else NULL; end if; -- (R)/(W): [m]hpmcounter3h - high
-          when csr_hpmcounter4h_c  | csr_mhpmcounter4h_c  => if (HPM_NUM_CNTS > 01) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(01); else NULL; end if; -- (R)/(W): [m]hpmcounter4h - high
-          when csr_hpmcounter5h_c  | csr_mhpmcounter5h_c  => if (HPM_NUM_CNTS > 02) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(02); else NULL; end if; -- (R)/(W): [m]hpmcounter5h - high
-          when csr_hpmcounter6h_c  | csr_mhpmcounter6h_c  => if (HPM_NUM_CNTS > 03) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(03); else NULL; end if; -- (R)/(W): [m]hpmcounter6h - high
-          when csr_hpmcounter7h_c  | csr_mhpmcounter7h_c  => if (HPM_NUM_CNTS > 04) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(04); else NULL; end if; -- (R)/(W): [m]hpmcounter7h - high
-          when csr_hpmcounter8h_c  | csr_mhpmcounter8h_c  => if (HPM_NUM_CNTS > 05) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(05); else NULL; end if; -- (R)/(W): [m]hpmcounter8h - high
-          when csr_hpmcounter9h_c  | csr_mhpmcounter9h_c  => if (HPM_NUM_CNTS > 06) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(06); else NULL; end if; -- (R)/(W): [m]hpmcounter9h - high
-          when csr_hpmcounter10h_c | csr_mhpmcounter10h_c => if (HPM_NUM_CNTS > 07) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(07); else NULL; end if; -- (R)/(W): [m]hpmcounter10h - high
-          when csr_hpmcounter11h_c | csr_mhpmcounter11h_c => if (HPM_NUM_CNTS > 08) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(08); else NULL; end if; -- (R)/(W): [m]hpmcounter11h - high
-          when csr_hpmcounter12h_c | csr_mhpmcounter12h_c => if (HPM_NUM_CNTS > 09) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(09); else NULL; end if; -- (R)/(W): [m]hpmcounter12h - high
-          when csr_hpmcounter13h_c | csr_mhpmcounter13h_c => if (HPM_NUM_CNTS > 10) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(10); else NULL; end if; -- (R)/(W): [m]hpmcounter13h - high
-          when csr_hpmcounter14h_c | csr_mhpmcounter14h_c => if (HPM_NUM_CNTS > 11) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(11); else NULL; end if; -- (R)/(W): [m]hpmcounter14h - high
-          when csr_hpmcounter15h_c | csr_mhpmcounter15h_c => if (HPM_NUM_CNTS > 12) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(12); else NULL; end if; -- (R)/(W): [m]hpmcounter15h - high
-          when csr_hpmcounter16h_c | csr_mhpmcounter16h_c => if (HPM_NUM_CNTS > 13) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(13); else NULL; end if; -- (R)/(W): [m]hpmcounter16h - high
-          when csr_hpmcounter17h_c | csr_mhpmcounter17h_c => if (HPM_NUM_CNTS > 14) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(14); else NULL; end if; -- (R)/(W): [m]hpmcounter17h - high
-          when csr_hpmcounter18h_c | csr_mhpmcounter18h_c => if (HPM_NUM_CNTS > 15) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(15); else NULL; end if; -- (R)/(W): [m]hpmcounter18h - high
-          when csr_hpmcounter19h_c | csr_mhpmcounter19h_c => if (HPM_NUM_CNTS > 16) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(16); else NULL; end if; -- (R)/(W): [m]hpmcounter19h - high
-          when csr_hpmcounter20h_c | csr_mhpmcounter20h_c => if (HPM_NUM_CNTS > 17) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(17); else NULL; end if; -- (R)/(W): [m]hpmcounter20h - high
-          when csr_hpmcounter21h_c | csr_mhpmcounter21h_c => if (HPM_NUM_CNTS > 18) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(18); else NULL; end if; -- (R)/(W): [m]hpmcounter21h - high
-          when csr_hpmcounter22h_c | csr_mhpmcounter22h_c => if (HPM_NUM_CNTS > 19) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(19); else NULL; end if; -- (R)/(W): [m]hpmcounter22h - high
-          when csr_hpmcounter23h_c | csr_mhpmcounter23h_c => if (HPM_NUM_CNTS > 20) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(20); else NULL; end if; -- (R)/(W): [m]hpmcounter23h - high
-          when csr_hpmcounter24h_c | csr_mhpmcounter24h_c => if (HPM_NUM_CNTS > 21) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(21); else NULL; end if; -- (R)/(W): [m]hpmcounter24h - high
-          when csr_hpmcounter25h_c | csr_mhpmcounter25h_c => if (HPM_NUM_CNTS > 22) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(22); else NULL; end if; -- (R)/(W): [m]hpmcounter25h - high
-          when csr_hpmcounter26h_c | csr_mhpmcounter26h_c => if (HPM_NUM_CNTS > 23) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(23); else NULL; end if; -- (R)/(W): [m]hpmcounter26h - high
-          when csr_hpmcounter27h_c | csr_mhpmcounter27h_c => if (HPM_NUM_CNTS > 24) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(24); else NULL; end if; -- (R)/(W): [m]hpmcounter27h - high
-          when csr_hpmcounter28h_c | csr_mhpmcounter28h_c => if (HPM_NUM_CNTS > 25) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(25); else NULL; end if; -- (R)/(W): [m]hpmcounter28h - high
-          when csr_hpmcounter29h_c | csr_mhpmcounter29h_c => if (HPM_NUM_CNTS > 26) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(26); else NULL; end if; -- (R)/(W): [m]hpmcounter29h - high
-          when csr_hpmcounter30h_c | csr_mhpmcounter30h_c => if (HPM_NUM_CNTS > 27) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(27); else NULL; end if; -- (R)/(W): [m]hpmcounter30h - high
-          when csr_hpmcounter31h_c | csr_mhpmcounter31h_c => if (HPM_NUM_CNTS > 28) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(28); else NULL; end if; -- (R)/(W): [m]hpmcounter31h - high
+          when csr_mhpmcounter3h_c  => if (HPM_NUM_CNTS > 00) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(00); else NULL; end if; -- r/w: mhpmcounter3h - high
+          when csr_mhpmcounter4h_c  => if (HPM_NUM_CNTS > 01) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(01); else NULL; end if; -- r/w: mhpmcounter4h - high
+          when csr_mhpmcounter5h_c  => if (HPM_NUM_CNTS > 02) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(02); else NULL; end if; -- r/w: mhpmcounter5h - high
+          when csr_mhpmcounter6h_c  => if (HPM_NUM_CNTS > 03) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(03); else NULL; end if; -- r/w: mhpmcounter6h - high
+          when csr_mhpmcounter7h_c  => if (HPM_NUM_CNTS > 04) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(04); else NULL; end if; -- r/w: mhpmcounter7h - high
+          when csr_mhpmcounter8h_c  => if (HPM_NUM_CNTS > 05) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(05); else NULL; end if; -- r/w: mhpmcounter8h - high
+          when csr_mhpmcounter9h_c  => if (HPM_NUM_CNTS > 06) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(06); else NULL; end if; -- r/w: mhpmcounter9h - high
+          when csr_mhpmcounter10h_c => if (HPM_NUM_CNTS > 07) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(07); else NULL; end if; -- r/w: mhpmcounter10h - high
+          when csr_mhpmcounter11h_c => if (HPM_NUM_CNTS > 08) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(08); else NULL; end if; -- r/w: mhpmcounter11h - high
+          when csr_mhpmcounter12h_c => if (HPM_NUM_CNTS > 09) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(09); else NULL; end if; -- r/w: mhpmcounter12h - high
+          when csr_mhpmcounter13h_c => if (HPM_NUM_CNTS > 10) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(10); else NULL; end if; -- r/w: mhpmcounter13h - high
+          when csr_mhpmcounter14h_c => if (HPM_NUM_CNTS > 11) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(11); else NULL; end if; -- r/w: mhpmcounter14h - high
+          when csr_mhpmcounter15h_c => if (HPM_NUM_CNTS > 12) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(12); else NULL; end if; -- r/w: mhpmcounter15h - high
+          when csr_mhpmcounter16h_c => if (HPM_NUM_CNTS > 13) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(13); else NULL; end if; -- r/w: mhpmcounter16h - high
+          when csr_mhpmcounter17h_c => if (HPM_NUM_CNTS > 14) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(14); else NULL; end if; -- r/w: mhpmcounter17h - high
+          when csr_mhpmcounter18h_c => if (HPM_NUM_CNTS > 15) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(15); else NULL; end if; -- r/w: mhpmcounter18h - high
+          when csr_mhpmcounter19h_c => if (HPM_NUM_CNTS > 16) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(16); else NULL; end if; -- r/w: mhpmcounter19h - high
+          when csr_mhpmcounter20h_c => if (HPM_NUM_CNTS > 17) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(17); else NULL; end if; -- r/w: mhpmcounter20h - high
+          when csr_mhpmcounter21h_c => if (HPM_NUM_CNTS > 18) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(18); else NULL; end if; -- r/w: mhpmcounter21h - high
+          when csr_mhpmcounter22h_c => if (HPM_NUM_CNTS > 19) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(19); else NULL; end if; -- r/w: mhpmcounter22h - high
+          when csr_mhpmcounter23h_c => if (HPM_NUM_CNTS > 20) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(20); else NULL; end if; -- r/w: mhpmcounter23h - high
+          when csr_mhpmcounter24h_c => if (HPM_NUM_CNTS > 21) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(21); else NULL; end if; -- r/w: mhpmcounter24h - high
+          when csr_mhpmcounter25h_c => if (HPM_NUM_CNTS > 22) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(22); else NULL; end if; -- r/w: mhpmcounter25h - high
+          when csr_mhpmcounter26h_c => if (HPM_NUM_CNTS > 23) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(23); else NULL; end if; -- r/w: mhpmcounter26h - high
+          when csr_mhpmcounter27h_c => if (HPM_NUM_CNTS > 24) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(24); else NULL; end if; -- r/w: mhpmcounter27h - high
+          when csr_mhpmcounter28h_c => if (HPM_NUM_CNTS > 25) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(25); else NULL; end if; -- r/w: mhpmcounter28h - high
+          when csr_mhpmcounter29h_c => if (HPM_NUM_CNTS > 26) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(26); else NULL; end if; -- r/w: mhpmcounter29h - high
+          when csr_mhpmcounter30h_c => if (HPM_NUM_CNTS > 27) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(27); else NULL; end if; -- r/w: mhpmcounter30h - high
+          when csr_mhpmcounter31h_c => if (HPM_NUM_CNTS > 28) and (hpm_cnt_hi_width_c > 0) then csr.rdata <= csr.mhpmcounterh_rd(28); else NULL; end if; -- r/w: mhpmcounter31h - high
 
           -- machine information registers --
-          when csr_mvendorid_c => -- R/-: mvendorid - vendor ID
-            csr.rdata <= (others => '0');
-          when csr_marchid_c => -- R/-: marchid - arch ID
-            csr.rdata(4 downto 0) <= "10011"; -- official RISC-V open-source arch ID
-          when csr_mimpid_c => -- R/-: mimpid - implementation ID
-            csr.rdata <= hw_version_c; -- NEORV32 hardware version
-          when csr_mhartid_c => -- R/-: mhartid - hardware thread ID
-            csr.rdata <= std_ulogic_vector(to_unsigned(HW_THREAD_ID, 32));
+          -- --------------------------------------------------------------------
+--        when csr_mvendorid_c => csr.rdata <= (others => '0'); -- mvendorid (r/-): vendor ID, implemented but always zero
+          when csr_marchid_c   => csr.rdata(4 downto 0) <= "10011"; -- marchid (r/-): arch ID - official RISC-V open-source arch ID
+          when csr_mimpid_c    => csr.rdata <= hw_version_c; -- mimpid (r/-): implementation ID -- NEORV32 hardware version
+          when csr_mhartid_c   => csr.rdata <= std_ulogic_vector(to_unsigned(HW_THREAD_ID, 32)); -- mhartid (r/-): hardware thread ID
 
           -- custom machine read-only CSRs --
-          when csr_mzext_c => -- R/-: mzext - available RISC-V Z* sub-extensions
+          -- --------------------------------------------------------------------
+          when csr_mzext_c => -- mzext (r/-): available RISC-V Z* sub-extensions
             csr.rdata(0) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_Zicsr);    -- Zicsr
             csr.rdata(1) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_Zifencei); -- Zifencei
-            csr.rdata(2) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_B);        -- Zbb (B)
-            csr.rdata(3) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_B);        -- Zbs (B)
-            csr.rdata(4) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_B);        -- Zba (B)
             csr.rdata(5) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_Zfinx);    -- Zfinx ("F-alternative")
             if (CPU_CNT_WIDTH = 64) then
               csr.rdata(6) <= '0'; -- Zxscnt (custom)
@@ -2710,10 +2792,18 @@ begin
             end if;
             csr.rdata(8) <= bool_to_ulogic_f(boolean(PMP_NUM_REGIONS > 0)); -- PMP (physical memory protection)
             csr.rdata(9) <= bool_to_ulogic_f(boolean(HPM_NUM_CNTS > 0)); -- HPM (hardware performance monitors)
+            csr.rdata(10) <= bool_to_ulogic_f(CPU_EXTENSION_RISCV_DEBUG); -- RISC-V debug mode
+
+          -- debug mode CSRs --
+          -- --------------------------------------------------------------------
+          when csr_dcsr_c      => if (CPU_EXTENSION_RISCV_DEBUG = true) then csr.rdata <= csr.dcsr_rd;   else NULL; end if; -- dcsr (r/w): debug mode control and status
+          when csr_dpc_c       => if (CPU_EXTENSION_RISCV_DEBUG = true) then csr.rdata <= csr.dpc;       else NULL; end if; -- dpc (r/w): debug mode program counter
+          when csr_dscratch0_c => if (CPU_EXTENSION_RISCV_DEBUG = true) then csr.rdata <= csr.dscratch0; else NULL; end if; -- dscratch0 (r/w): debug mode scratch register 0
 
           -- undefined/unavailable --
+          -- --------------------------------------------------------------------
           when others =>
-            NULL; -- not implemented
+            NULL; -- not implemented, read as zero if read access is granted
 
         end case;
       end if;
@@ -2722,6 +2812,94 @@ begin
 
   -- CSR read data output --
   csr_rdata_o <= csr.rdata;
+
+
+  -- Debug Control --------------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  debug_control: process(rstn_i, clk_i)
+  begin
+    if (rstn_i = '0') then
+      debug_ctrl.state        <= DEBUG_OFFLINE;
+      debug_ctrl.ext_halt_req <= "00";
+    elsif rising_edge(clk_i) then
+      if (CPU_EXTENSION_RISCV_DEBUG = true) then
+
+        -- rising edge detector --
+        debug_ctrl.ext_halt_req <= debug_ctrl.ext_halt_req(0) & db_halt_req_i;
+
+        -- state machine --
+        case debug_ctrl.state is
+
+          when DEBUG_OFFLINE => -- not in debug mode, waiting for entering request
+            if (debug_ctrl.trig_halt = '1') or -- external request (from DM)
+               (debug_ctrl.trig_break = '1') or -- ebreak instruction
+               (debug_ctrl.trig_step = '1') then -- single-stepping mode
+              debug_ctrl.state <= DEBUG_PENDING;
+            end if;
+
+          when DEBUG_PENDING => -- waiting to start debug mode
+            if (trap_ctrl.env_start_ack = '1') and (trap_ctrl.cause(5) = '1') then -- processing trap entry into debug mode
+              debug_ctrl.state <= DEBUG_ONLINE;
+            end if;
+
+          when DEBUG_ONLINE => -- we are in debug mode
+            if (debug_ctrl.dret = '1') then -- DRET instruction
+              debug_ctrl.state <= DEBUG_EXIT;
+            end if;
+
+          when DEBUG_EXIT => -- leaving debug mode
+            if (execute_engine.state = TRAP_EXECUTE) then -- processing trap exit
+              debug_ctrl.state <= DEBUG_OFFLINE;
+            end if;
+
+          when others => -- undefined
+            debug_ctrl.state <= DEBUG_OFFLINE;
+
+        end case;
+      else -- debug mode NOT implemented
+        debug_ctrl.state        <= DEBUG_OFFLINE;
+        debug_ctrl.ext_halt_req <= "00";
+      end if;
+    end if;
+  end process debug_control;
+
+  -- state decoding --
+  debug_ctrl.pending <= '1' when (debug_ctrl.state = DEBUG_PENDING) and (CPU_EXTENSION_RISCV_DEBUG = true) else '0';
+  debug_ctrl.running <= '1' when ((debug_ctrl.state = DEBUG_ONLINE) or (debug_ctrl.state = DEBUG_EXIT)) and (CPU_EXTENSION_RISCV_DEBUG = true) else '0';
+
+  -- entry debug mode triggers --
+  debug_ctrl.trig_break <= trap_ctrl.break_point and (debug_ctrl.running or -- we are in debug mode: re-enter debug mode
+                           (csr.priv_m_mode and csr.dcsr_ebreakm and (not debug_ctrl.running)) or -- enabled goto-debug-mode in machine mode on "ebreak"
+                           (csr.priv_u_mode and csr.dcsr_ebreaku and (not debug_ctrl.running))); -- enabled goto-debug-mode in user mode on "ebreak"
+  debug_ctrl.trig_halt <= (not debug_ctrl.ext_halt_req(1)) and debug_ctrl.ext_halt_req(0) and (not debug_ctrl.running); -- rising edge detector from external halt request (if not halted already)
+  debug_ctrl.trig_step <= csr.dcsr_step and (not debug_ctrl.running); -- single-step mode (trigger when NOT CURRENTLY in debug mode)
+
+
+  -- Debug Control and Status Register (dcsr) - Read-Back -----------------------------------
+  -- -------------------------------------------------------------------------------------------
+  dcsr_readback_false:
+  if (CPU_EXTENSION_RISCV_DEBUG = false) generate
+    csr.dcsr_rd <= (others => '-');
+  end generate;
+
+  dcsr_readback_true:
+  if (CPU_EXTENSION_RISCV_DEBUG = true) generate
+    csr.dcsr_rd(31 downto 28) <= "0100"; -- xdebugver: external debug support compatible to spec
+    csr.dcsr_rd(27 downto 16) <= (others => '0'); -- reserved
+    csr.dcsr_rd(15) <= csr.dcsr_ebreakm; -- ebreakm: what happens on ebreak in m-mode? (normal trap OR debug-enter)
+    csr.dcsr_rd(14) <= '0'; -- ebreakh: not available
+    csr.dcsr_rd(13) <= '0'; -- ebreaks: not available
+    csr.dcsr_rd(12) <= csr.dcsr_ebreaku when (CPU_EXTENSION_RISCV_U = true) else '0'; -- ebreaku: what happens on ebreak in u-mode? (normal trap OR debug-enter)
+    csr.dcsr_rd(11) <= '0'; -- stepie: interrupts are disabled during single-stepping
+    csr.dcsr_rd(10) <= '0'; -- stopcount: counters increment as usual FIXME ???
+    csr.dcsr_rd(09) <= '0'; -- stoptime: timers increment as usual
+    csr.dcsr_rd(08 downto 06) <= csr.dcsr_cause; -- debug mode entry cause
+    csr.dcsr_rd(05) <= '0'; -- reserved
+    csr.dcsr_rd(04) <= '0'; -- mprven: mstatus.mprv is ignored in debug mode
+    csr.dcsr_rd(03) <= trap_ctrl.irq_buf(interrupt_nm_irq_c); -- nmip: pending non-maskable interrupt
+    csr.dcsr_rd(02) <= csr.dcsr_step; -- step: single-step mode
+    csr.dcsr_rd(01 downto 00) <= csr.dcsr_prv; -- prv: privilege mode when debug mode was entered
+  end generate;
 
 
 end neorv32_cpu_control_rtl;

@@ -36,7 +36,7 @@
 /* Copyright (C) 2014-2020 Free Software Foundation, Inc.
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
-   notice and this notice are preserved.  */
+   notice and this notice are preserved. */
 
 /* modified for the NEORV32 processor by Stephan Nolting */
 
@@ -46,30 +46,32 @@ OUTPUT_ARCH(riscv)
 ENTRY(_start)
 SEARCH_DIR("/opt/riscv/riscv32-unknown-elf/lib"); SEARCH_DIR("=/opt/riscv/riscv64-unknown-linux-gnu/lib"); SEARCH_DIR("=/usr/local/lib"); SEARCH_DIR("=/lib"); SEARCH_DIR("=/usr/lib");
 
-/* ************************************************************************* */
-/* NEORV32 memory configuration.                                             */
-/* Make sure this is sync with your processor/memory hardware configuration! */
-/* ************************************************************************* */
-/* "rom"   : instruction memory (IMEM) / bootloader ROM                      */
-/* "ram"   : data memory (DMEM)                                              */
-/* "iodev" : peripheral/IO devices (not used here; passed to crt0)           */
-/* ************************************************************************* */
+/* ************************************************************************** */
+/* NEORV32 memory section configuration.                                      */
+/* ************************************************************************** */
+/* "ram"   : data memory (int/ext DMEM) - make sure this is sync with the HW! */
+/* "rom"   : instruction memory (int/ext IMEM or bootloader ROM)              */
+/* "iodev" : peripheral/IO devices                                            */
+/* ************************************************************************** */
 MEMORY
 {
-/* "rom" section: first value of ORIGIN/LENGTH => bootloader ROM; second value of ORIGIN/LENGTH => instruction memory */
+/* section base addresses and sizes have to be a multiple of 4-bytes */
+/* ram section: first value of LENGTH => data memory used by bootloader (fixed!); second value of LENGTH => *physical* size of data memory */
+/* adapt the right-most value to match the *total physical data memory size* of your setup */
 
-  rom  (rx)  : ORIGIN = DEFINED(make_bootloader) ? 0xFFFF0000 : 0x00000000, LENGTH = DEFINED(make_bootloader) ? 4*1024 : 16*1024
-  ram (rwx)  : ORIGIN = 0x80000000, LENGTH = 8*1024
-  iodev (rw) : ORIGIN = 0xFFFFFF00, LENGTH = 256
+  ram  (rwx) : ORIGIN = 0x80000000, LENGTH = DEFINED(make_bootloader) ? 512 : 8*1024
+
+/* rom and iodev sections should NOT be modified by the user at all! */
+/* rom section: first value of ORIGIN/LENGTH => bootloader ROM; second value of ORIGIN/LENGTH => maximum *logical* size of instruction memory */
+
+  rom   (rx) : ORIGIN = DEFINED(make_bootloader) ? 0xFFFF0000 : 0x00000000, LENGTH = DEFINED(make_bootloader) ? 32K : 2048M
+  iodev (rw) : ORIGIN = 0xFFFFFE00, LENGTH = 512
 
 }
 /* ************************************************************************* */
 
 SECTIONS
 {
-  /* stack pointer init: last 32-bit entry in data memory */
-  __crt0_stack_begin = (ORIGIN(ram) + LENGTH(ram)) - 4;
-
   /* start section on WORD boundary */
   . = ALIGN(4);
 
@@ -291,7 +293,8 @@ SECTIONS
   /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) }
 
 
-  /* Provide further symbols for neorv32 crt0 */
+  /* Provide symbols for neorv32 crt0 start-up code */
+  PROVIDE(__crt0_stack_begin = (ORIGIN(ram) + LENGTH(ram)) - 4);
   PROVIDE(__crt0_bss_start   = __bss_start);
   PROVIDE(__crt0_bss_end     = __BSS_END__);
   PROVIDE(__crt0_copy_data_src_begin = __etext + SIZEOF(.rodata));

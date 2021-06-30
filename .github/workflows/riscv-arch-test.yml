@@ -23,8 +23,10 @@ jobs:
 
       - name: '🔧 Setup RISC-V GCC'
         run: |
-          /bin/bash -c "chmod u+x ./.ci/install.sh && ./.ci/install.sh"
-          echo $GITHUB_WORKSPACE
+          mkdir riscv
+          curl -fsSL https://github.com/stnolting/riscv-gcc-prebuilt/releases/download/rv32i-2.0.0/riscv32-unknown-elf.gcc-10.2.0.rv32i.ilp32.newlib.tar.gz | \
+          tar -xzf - -C riscv
+          ls -al riscv
 
       - name: '🔧 Setup GHDL Simulator'
         uses: ghdl/setup-ghdl-ci@nightly
@@ -32,4 +34,4 @@ jobs:
           backend: gcc
 
       - name: '⚙️ Run RISC-V Architecture Tests'
-        run: /bin/bash -c "chmod u+x ./riscv-arch-test/run_riscv_arch_test.sh && ./riscv-arch-test/run_riscv_arch_test.sh"
+        run: ./riscv-arch-test/run_riscv_arch_test.sh

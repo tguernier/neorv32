@@ -46,12 +46,11 @@ entity neorv32_sysinfo is
   generic (
     -- General --
     CLOCK_FREQUENCY      : natural := 0;      -- clock frequency of clk_i in Hz
-    BOOTLOADER_EN        : boolean := true;   -- implement processor-internal bootloader?
+    INT_BOOTLOADER_EN            : boolean := true; -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
     USER_CODE            : std_ulogic_vector(31 downto 0) := x"00000000"; -- custom user code
     -- Internal Instruction memory --
     MEM_INT_IMEM_EN      : boolean := true;   -- implement processor-internal instruction memory
     MEM_INT_IMEM_SIZE    : natural := 8*1024; -- size of processor-internal instruction memory in bytes
-    MEM_INT_IMEM_ROM     : boolean := false;  -- implement processor-internal instruction memory as ROM
     -- Internal Data memory --
     MEM_INT_DMEM_EN      : boolean := true;   -- implement processor-internal data memory
     MEM_INT_DMEM_SIZE    : natural := 4*1024; -- size of processor-internal data memory in bytes
@@ -62,6 +61,8 @@ entity neorv32_sysinfo is
     ICACHE_ASSOCIATIVITY : natural := 1;      -- i-cache: associativity (min 1), has to be a power 2
     -- External memory interface --
     MEM_EXT_EN           : boolean := false;  -- implement external memory bus interface?
+    -- On-Chip Debugger --
+    ON_CHIP_DEBUGGER_EN  : boolean := false;  -- implement OCD?
     -- Processor peripherals --
     IO_GPIO_EN           : boolean := true;   -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN          : boolean := true;   -- implement machine system timer (MTIME)?
@@ -69,7 +70,7 @@ entity neorv32_sysinfo is
     IO_UART1_EN          : boolean := true;   -- implement secondary universal asynchronous receiver/transmitter (UART1)?
     IO_SPI_EN            : boolean := true;   -- implement serial peripheral interface (SPI)?
     IO_TWI_EN            : boolean := true;   -- implement two-wire interface (TWI)?
-    IO_PWM_EN            : boolean := true;   -- implement pulse-width modulation unit (PWM)?
+    IO_PWM_NUM_CH        : natural := 4;      -- number of PWM channels to implement
     IO_WDT_EN            : boolean := true;   -- implement watch dog timer (WDT)?
     IO_TRNG_EN           : boolean := true;   -- implement true random number generator (TRNG)?
     IO_CFS_EN            : boolean := true;   -- implement custom functions subsystem (CFS)?
@@ -123,24 +124,24 @@ begin
 
   -- SYSINFO(2): Implemented processor devices/features --
   -- Memory --
-  sysinfo_mem(2)(00) <= bool_to_ulogic_f(BOOTLOADER_EN);     -- processor-internal bootloader implemented?
+  sysinfo_mem(2)(00) <= bool_to_ulogic_f(INT_BOOTLOADER_EN); -- processor-internal bootloader implemented?
   sysinfo_mem(2)(01) <= bool_to_ulogic_f(MEM_EXT_EN);        -- external memory bus interface implemented?
   sysinfo_mem(2)(02) <= bool_to_ulogic_f(MEM_INT_IMEM_EN);   -- processor-internal instruction memory implemented?
-  sysinfo_mem(2)(03) <= bool_to_ulogic_f(MEM_INT_IMEM_ROM);  -- processor-internal instruction memory implemented as ROM?
-  sysinfo_mem(2)(04) <= bool_to_ulogic_f(MEM_INT_DMEM_EN);   -- processor-internal data memory implemented?
-  sysinfo_mem(2)(05) <= bool_to_ulogic_f(xbus_big_endian_c); -- is external memory bus interface using BIG-endian byte-order?
-  sysinfo_mem(2)(06) <= bool_to_ulogic_f(ICACHE_EN);         -- processor-internal instruction cache implemented?
+  sysinfo_mem(2)(03) <= bool_to_ulogic_f(MEM_INT_DMEM_EN);   -- processor-internal data memory implemented?
+  sysinfo_mem(2)(04) <= bool_to_ulogic_f(wb_big_endian_c);   -- is external memory bus interface using BIG-endian byte-order?
+  sysinfo_mem(2)(05) <= bool_to_ulogic_f(ICACHE_EN);         -- processor-internal instruction cache implemented?
   --
-  sysinfo_mem(2)(14 downto 07) <= (others => '0'); -- reserved
+  sysinfo_mem(2)(13 downto 06) <= (others => '0'); -- reserved
   -- Misc --
-  sysinfo_mem(2)(15) <= bool_to_ulogic_f(dedicated_reset_c); -- dedicated hardware reset of all core registers?
+  sysinfo_mem(2)(14) <= bool_to_ulogic_f(ON_CHIP_DEBUGGER_EN); -- on-chip debugger implemented?
+  sysinfo_mem(2)(15) <= bool_to_ulogic_f(dedicated_reset_c);   -- dedicated hardware reset of all core registers?
   -- IO --
   sysinfo_mem(2)(16) <= bool_to_ulogic_f(IO_GPIO_EN);   -- general purpose input/output port unit (GPIO) implemented?
   sysinfo_mem(2)(17) <= bool_to_ulogic_f(IO_MTIME_EN);  -- machine system timer (MTIME) implemented?
   sysinfo_mem(2)(18) <= bool_to_ulogic_f(IO_UART0_EN);  -- primary universal asynchronous receiver/transmitter (UART0) implemented?
   sysinfo_mem(2)(19) <= bool_to_ulogic_f(IO_SPI_EN);    -- serial peripheral interface (SPI) implemented?
   sysinfo_mem(2)(20) <= bool_to_ulogic_f(IO_TWI_EN);    -- two-wire interface (TWI) implemented?
-  sysinfo_mem(2)(21) <= bool_to_ulogic_f(IO_PWM_EN);    -- pulse-width modulation unit (PWM) implemented?
+  sysinfo_mem(2)(21) <= bool_to_ulogic_f(boolean(IO_PWM_NUM_CH > 0)); -- pulse-width modulation unit (PWM) implemented?
   sysinfo_mem(2)(22) <= bool_to_ulogic_f(IO_WDT_EN);    -- watch dog timer (WDT) implemented?
   sysinfo_mem(2)(23) <= bool_to_ulogic_f(IO_CFS_EN);    -- custom functions subsystem (CFS) implemented?
   sysinfo_mem(2)(24) <= bool_to_ulogic_f(IO_TRNG_EN);   -- true random number generator (TRNG) implemented?

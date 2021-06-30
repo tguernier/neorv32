@@ -1,0 +1,76 @@
+<<<
+:sectnums:
+==== Custom Functions Subsystem (CFS)
+
+[cols="<3,<3,<4"]
+[frame="topbot",grid="none"]
+|=======================
+| Hardware source file(s): | neorv32_gfs.vhd | 
+| Software driver file(s): | neorv32_gfs.c |
+|                          | neorv32_gfs.h |
+| Top entity port:         | `cfs_in_i`  | custom input conduit
+|                          | `cfs_out_o` | custom output conduit
+| Configuration generics:  | _IO_CFS_EN_ | implement CFS when _true_
+|                          | _IO_CFS_CONFIG_ | custom generic conduit
+|                          | _IO_CFS_IN_SIZE_ | size of `cfs_in_i`
+|                          | _IO_CFS_OUT_SIZE_ | size of `cfs_out_o`
+| CPU interrupts:          | fast IRQ channel 1 | CFS interrupt (see <<_processor_interrupts>>)
+|=======================
+
+**Theory of Operation**
+
+The custom functions subsystem can be used to implement application-specific user-defined co-processors
+(like encryption or arithmetic accelerators) or peripheral/communication interfaces. In contrast to connecting
+custom hardware accelerators via the external memory interface, the CFS provide a convenient and low-latency
+extension and customization option.
+
+The CFS provides up to 32x 32-bit memory-mapped registers (see register map table below). The actual
+functionality of these register has to be defined by the hardware designer.
+
+[INFO]
+Take a look at the template CFS VHDL source file (`rtl/core/neorv32_cfs.vhd`). The file is highly
+commented to illustrate all aspects that are relevant for implementing custom CFS-based co-processor designs.
+
+**CFS Software Access**
+
+The CFS memory-mapped registers can be accessed by software using the provided C-language aliases (see
+register map table below). Note that all interface registers provide 32-bit access data of type `uint32_t`.
+
+[source,c]
+----
+// C-code CFS usage example
+CFS_REG_0 = (uint32_t)some_data_array(i); // write to CFS register 0
+uint32_t temp = CFS_REG_20; // read from CFS register 20
+----
+
+**CFS Interrupt**
+
+The CFS provides a single one-shot interrupt request signal mapped to the CPU's fast interrupt channel 1.
+See section <<_processor_interrupts>> for more information.
+
+**CFS Configuration Generic**
+
+By default, the CFS provides a single 32-bit `std_(u)logic_vector` configuration generic _IO_CFS_CONFIG_
+that is available in the processor's top entity. This generic can be used to pass custom configuration options
+from the top entity down to the CFS entity.
+
+**CFS Custom IOs**
+
+By default, the CFS also provides two unidirectional input and output conduits `cfs_in_i` and `cfs_out_o`.
+These signals are propagated to the processor's top entity. The actual use of these signals has to be defined
+by the hardware designer. The size of the input signal conduit `cfs_in_i` is defined via the (top's) _IO_CFS_IN_SIZE_ configuration
+generic (default = 32-bit). The size of the output signal conduit `cfs_out_o` is defined via the (top's)
+_IO_CFS_OUT_SIZE_ configuration generic (default = 32-bit). If the custom function subsystem is not implemented
+(_IO_CFS_EN_ = false) the `cfs_out_o` signal is tied to all-zero.
+
+.CFS register map
+[cols="^4,<5,^2,^3,<14"]
+[options="header",grid="all"]
+|=======================
+| Address | Name [C] | Bit(s) | R/W | Function
+| `0xfffffe00` | _CFS_REG_0_  |`31:0` | (r)/(w) | custom CFS interface register 0
+| `0xfffffe04` | _CFS_REG_1_  |`31:0` | (r)/(w) | custom CFS interface register 1
+| ...          | ...          |`31:0` | (r)/(w) | ...
+| `0xfffffe78` | _CFS_REG_30_ |`31:0` | (r)/(w) | custom CFS interface register 30
+| `0xfffffe7c` | _CFS_REG_31_ |`31:0` | (r)/(w) | custom CFS interface register 31
+|=======================
