@@ -52,8 +52,8 @@ entity neorv32_test_setup is
     -- GPIO --
     LEDR        : out std_ulogic_vector(9 downto 0); -- parallel output
     -- UART0 --
-    HPS_UART_TX : out std_ulogic; -- UART0 send data
-    HPS_UART_RX : in  std_ulogic := '0' -- UART0 receive data
+    -- HPS_UART_TX : out std_ulogic; -- UART0 send data
+    -- HPS_UART_RX : in  std_ulogic := '0' -- UART0 receive data
   );
 end neorv32_test_setup;
 
