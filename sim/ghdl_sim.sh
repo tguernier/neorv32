@@ -59,8 +59,8 @@ for item in \
   chmod 777 neorv32."$item".out
 done
 
-# Run simulation
+# Run simulation and output waveform file (neorv32_wave.ghw)
 ghdl -m --work=neorv32 neorv32_tb_simple
-ghdl -r --work=neorv32 neorv32_tb_simple --max-stack-alloc=0 --ieee-asserts=disable --assert-level=error $SIM_CONFIG
+ghdl -r --work=neorv32 neorv32_tb_simple --max-stack-alloc=0 --ieee-asserts=disable --assert-level=error --wave=neorv32_wave.ghw $SIM_CONFIG
 
 cat neorv32.uart0.sim_mode.text.out | grep "CPU TEST COMPLETED SUCCESSFULLY!"

@@ -33,3 +33,10 @@ sw/image_gen/image_gen.exe
 # quartus stuff
 *.vhd.bak
 *.vhd.orig
+
+# waveform files
+*.ghw
+
+# minicom terminal logs
+*.cap
+

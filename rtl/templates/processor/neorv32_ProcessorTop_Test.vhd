@@ -77,10 +77,10 @@ begin
     ON_CHIP_DEBUGGER_EN          => false,       -- implement on-chip debugger
     -- RISC-V CPU Extensions --
     CPU_EXTENSION_RISCV_A        => false,       -- implement atomic extension?
-    CPU_EXTENSION_RISCV_C        => true,        -- implement compressed extension?
+    CPU_EXTENSION_RISCV_C        => false,        -- implement compressed extension?
     CPU_EXTENSION_RISCV_E        => false,       -- implement embedded RF extension?
-    CPU_EXTENSION_RISCV_M        => true,        -- implement muld/div extension?
-    CPU_EXTENSION_RISCV_U        => true,        -- implement user mode extension?
+    CPU_EXTENSION_RISCV_M        => false,        -- implement muld/div extension?
+    CPU_EXTENSION_RISCV_U        => false,        -- implement user mode extension?
     CPU_EXTENSION_RISCV_Zfinx    => false,       -- implement 32-bit floating-point extension (using INT reg!)
     CPU_EXTENSION_RISCV_Zicsr    => true,        -- implement CSR system?
     CPU_EXTENSION_RISCV_Zifencei => false,       -- implement instruction stream sync.?
@@ -96,10 +96,10 @@ begin
     HPM_CNT_WIDTH                => 40,          -- total size of HPM counters (0..64)
     -- Internal Instruction memory --
     MEM_INT_IMEM_EN              => true,        -- implement processor-internal instruction memory
-    MEM_INT_IMEM_SIZE            => 16*1024,     -- size of processor-internal instruction memory in bytes
+    MEM_INT_IMEM_SIZE            => 32*1024,     -- size of processor-internal instruction memory in bytes
     -- Internal Data memory --
     MEM_INT_DMEM_EN              => true,        -- implement processor-internal data memory
-    MEM_INT_DMEM_SIZE            => 8*1024,      -- size of processor-internal data memory in bytes
+    MEM_INT_DMEM_SIZE            => 16*1024,      -- size of processor-internal data memory in bytes
     -- Internal Cache memory --
     ICACHE_EN                    => false,       -- implement instruction cache
     ICACHE_NUM_BLOCKS            => 4,           -- i-cache: number of blocks (min 1), has to be a power of 2
