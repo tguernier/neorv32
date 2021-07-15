@@ -69,8 +69,14 @@ end neorv32_cpu_regfile;
 
 architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
 
+  -- types for DIFT system (added by Tom)
+  type dift_reg_t is record
+		reg_contents	: std_ulogic_vector(data_width_c-1 downto 0);
+		reg_tag		    : std_ulogic;
+  end record;
+  
   -- register file --
-  type   reg_file_t is array (31 downto 0) of std_ulogic_vector(data_width_c-1 downto 0);
+  type   reg_file_t is array (31 downto 0) of dift_reg_t;
   type   reg_file_emb_t is array (15 downto 0) of std_ulogic_vector(data_width_c-1 downto 0);
   signal reg_file     : reg_file_t;
   signal reg_file_emb : reg_file_emb_t;
@@ -100,10 +106,11 @@ begin
     if rising_edge(clk_i) then -- sync read and write
       if (CPU_EXTENSION_RISCV_E = false) then -- normal register file with 32 entries
         if (rf_we = '1') then
-          reg_file(to_integer(unsigned(opa_addr(4 downto 0)))) <= rf_wdata;
+          reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents <= rf_wdata;
+	      reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag <= '0'; -- TODO: have DIFT logic
         end if;
-        rs1 <= reg_file(to_integer(unsigned(opa_addr(4 downto 0))));
-        rs2 <= reg_file(to_integer(unsigned(opb_addr(4 downto 0))));
+        rs1 <= reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents;
+        rs2 <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_contents;
       else -- embedded register file with 16 entries
         if (rf_we = '1') then
           reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0)))) <= rf_wdata;
