@@ -151,6 +151,10 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal fetch_pc   : std_ulogic_vector(data_width_c-1 downto 0); -- pc for instruction fetch
   signal curr_pc    : std_ulogic_vector(data_width_c-1 downto 0); -- current pc (for current executed instruction)
   signal fpu_flags  : std_ulogic_vector(4 downto 0); -- FPU exception flags
+  
+  -- dift signals
+  signal rs1_t      : std_ulogic; -- source register tag bits
+  signal rs2_t      : std_ulogic;
 
   -- pmp interface --
   signal pmp_addr : pmp_addr_if_t;
@@ -285,15 +289,17 @@ begin
   )
   port map (
     -- global control --
-    clk_i  => clk_i,              -- global clock, rising edge
-    ctrl_i => ctrl,               -- main control bus
+    clk_i   => clk_i,              -- global clock, rising edge
+    ctrl_i  => ctrl,               -- main control bus
     -- data input --
-    mem_i  => mem_rdata,          -- memory read data
-    alu_i  => alu_res,            -- ALU result
+    mem_i   => mem_rdata,          -- memory read data
+    alu_i   => alu_res,            -- ALU result
     -- data output --
-    rs1_o  => rs1,                -- operand 1
-    rs2_o  => rs2,                -- operand 2
-    cmp_o  => comparator          -- comparator status
+    rs1_o   => rs1,                -- operand 1
+    rs2_o   => rs2,                -- operand 2
+    rs1_t_o => rs1_t,              -- operand 1 tag bit TODO: connect to ALU
+    rs2_t_o => rs2_t,              -- operand 2 tag bit
+    cmp_o   => comparator          -- comparator status
   );
 
 

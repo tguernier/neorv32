@@ -63,6 +63,8 @@ entity neorv32_cpu_regfile is
     -- data output --
     rs1_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
     rs2_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
+    rs1_t_o: out std_ulogic; -- rs1 DIFT tag
+    rs2_t_o: out std_ulogic; -- rs2 DIFT tag
     cmp_o  : out std_ulogic_vector(1 downto 0) -- comparator status
   );
 end neorv32_cpu_regfile;
@@ -71,8 +73,8 @@ architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
 
   -- types for DIFT system (added by Tom)
   type dift_reg_t is record
-		reg_contents	: std_ulogic_vector(data_width_c-1 downto 0);
-		reg_tag		    : std_ulogic;
+	 reg_contents : std_ulogic_vector(data_width_c-1 downto 0);
+         reg_tag      : std_ulogic;
   end record;
   
   -- register file --
@@ -87,6 +89,7 @@ architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
   signal opa_addr     : std_ulogic_vector(4 downto 0); -- rs1/dst address
   signal opb_addr     : std_ulogic_vector(4 downto 0); -- rs2 address
   signal rs1, rs2     : std_ulogic_vector(data_width_c-1 downto 0);
+  signal rs1_t, rs2_t : std_ulogic;
 
   -- comparator --
   signal cmp_opx : std_ulogic_vector(data_width_c downto 0);
@@ -107,10 +110,12 @@ begin
       if (CPU_EXTENSION_RISCV_E = false) then -- normal register file with 32 entries
         if (rf_we = '1') then
           reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents <= rf_wdata;
-	      reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag <= '0'; -- TODO: have DIFT logic
+	  reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag <= '0'; -- TODO: have DIFT logic
         end if;
         rs1 <= reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents;
+        rs1_t <= reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag;
         rs2 <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_contents;
+        rs2_t <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_tag;
       else -- embedded register file with 16 entries
         if (rf_we = '1') then
           reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0)))) <= rf_wdata;
@@ -135,8 +140,9 @@ begin
 
   -- data output --
   rs1_o <= rs1;
+  rs1_t_o <= rs1_t;
   rs2_o <= rs2;
-
+  rs2_t_o <= rs2_t;
 
   -- Comparator Unit (for conditional branches) ---------------------------------------------
   -- -------------------------------------------------------------------------------------------
