@@ -32,6 +32,8 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
+-- TODO: increase data bus width from 32 to 36 for DIFT tags
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -84,6 +86,7 @@ package neorv32_package is
   -- -------------------------------------------------------------------------------------------
   type mem32_t is array (natural range <>) of std_ulogic_vector(31 downto 0); -- memory with 32-bit entries
   type mem8_t  is array (natural range <>) of std_ulogic_vector(07 downto 0); -- memory with 8-bit entries
+  type mem1_t  is array (natural range <>) of std_ulogic;                     -- 1-bit memory (for DIFT tags)
 
   -- Helper Functions -----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------

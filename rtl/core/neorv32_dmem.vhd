@@ -32,6 +32,8 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
+-- TODO: connect DIFT tags input and output to CPU bus
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -78,16 +80,23 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   signal mem_ram_b1 : mem8_t(0 to DMEM_SIZE/4-1);
   signal mem_ram_b2 : mem8_t(0 to DMEM_SIZE/4-1);
   signal mem_ram_b3 : mem8_t(0 to DMEM_SIZE/4-1);
+  
+  -- DIFT tag memory (1 tag bit per byte) - initialized with zeroes --
+  signal mem_tag_b0 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
+  signal mem_tag_b1 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
+  signal mem_tag_b2 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
+  signal mem_tag_b3 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
 
   -- read data --
   signal mem_ram_b0_rd, mem_ram_b1_rd, mem_ram_b2_rd, mem_ram_b3_rd : std_ulogic_vector(7 downto 0);
+  signal mem_tag_b0_rd, mem_tag_b1_rd, mem_tag_b2_rd, mem_tag_b3_rd : std_ulogic;
 
 begin
 
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   assert false report "NEORV32 PROCESSOR CONFIG NOTE: Implementing processor-internal DMEM (RAM, " & natural'image(DMEM_SIZE) & " bytes)." severity note;
-
+  assert false report "NEORV32 PROCESSOR CONFIG NOTE: Implementing DIFT tags as processor-internal DMEM (RAM, " & natural'image(DMEM_SIZE/8) & " bytes)." severity note;
 
   -- Access Control -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -105,23 +114,31 @@ begin
       if (acc_en = '1') then -- reduce switching activity when not accessed
         if (wren_i = '1') and (ben_i(0) = '1') then -- byte 0
           mem_ram_b0(to_integer(unsigned(addr))) <= data_i(07 downto 00);
+          mem_tag_b0(to_integer(unsigned(addr))) <= '0'; -- TODO: connect to bus
         else
           mem_ram_b0_rd <= mem_ram_b0(to_integer(unsigned(addr)));
+          mem_tag_b0_rd <= mem_tag_b0(to_integer(unsigned(addr)));
         end if;
         if (wren_i = '1') and (ben_i(1) = '1') then -- byte 1
           mem_ram_b1(to_integer(unsigned(addr))) <= data_i(15 downto 08);
+          mem_tag_b1(to_integer(unsigned(addr))) <= '0'; -- TODO: connect to bus
         else
           mem_ram_b1_rd <= mem_ram_b1(to_integer(unsigned(addr)));
+          mem_tag_b1_rd <= mem_tag_b1(to_integer(unsigned(addr)));
         end if;
         if (wren_i = '1') and (ben_i(2) = '1') then -- byte 2
           mem_ram_b2(to_integer(unsigned(addr))) <= data_i(23 downto 16);
+          mem_tag_b2(to_integer(unsigned(addr))) <= '0'; -- TODO: connect to bus
         else
           mem_ram_b2_rd <= mem_ram_b2(to_integer(unsigned(addr)));
+          mem_tag_b2_rd <= mem_tag_b2(to_integer(unsigned(addr)));
         end if;
         if (wren_i = '1') and (ben_i(3) = '1') then -- byte 3
           mem_ram_b3(to_integer(unsigned(addr))) <= data_i(31 downto 24);
+          mem_tag_b3(to_integer(unsigned(addr))) <= '0'; --TODO: connect to bus
         else
           mem_ram_b3_rd <= mem_ram_b3(to_integer(unsigned(addr)));
+          mem_tag_b3_rd <= mem_tag_b3(to_integer(unsigned(addr)));
         end if;
       end if;
     end if;

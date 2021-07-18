@@ -34,6 +34,8 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
+-- TODO: increase bus width to fit DIFT tag bits (32 bits to 36 bits)
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
