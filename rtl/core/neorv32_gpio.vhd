@@ -50,7 +50,7 @@ entity neorv32_gpio is
     rden_i : in  std_ulogic; -- read enable
     wren_i : in  std_ulogic; -- write enable
     data_i : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
+    data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic; -- transfer acknowledge
     -- parallel io --
     gpio_o : out std_ulogic_vector(31 downto 0);
@@ -106,7 +106,7 @@ begin
         if (addr = gpio_in_addr_c) then
           data_o <= din; -- data input port
         else -- gpio_out_addr_c
-          data_o <= dout; -- data output port
+          data_o <= dout & "0000"; -- data output port, no DIFT tags
         end if;
       end if;
     end if;

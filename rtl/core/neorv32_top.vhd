@@ -38,6 +38,8 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
+  -- TODO: extend bus_interface_t to 36 bits
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -269,7 +271,7 @@ architecture neorv32_top_rtl of neorv32_top is
 
   -- module response bus - entry type --
   type resp_bus_entry_t is record
-    rdata : std_ulogic_vector(data_width_c-1 downto 0);
+    rdata : std_ulogic_vector(dift_bus_w_c-1 downto 0);
     ack   : std_ulogic;
     err   : std_ulogic;
   end record;
@@ -611,7 +613,7 @@ begin
 
   -- bus response --
   bus_response: process(resp_bus, bus_keeper_err)
-    variable rdata_v : std_ulogic_vector(data_width_c-1 downto 0);
+    variable rdata_v : std_ulogic_vector(dift_bus_w_c-1 downto 0);
     variable ack_v   : std_ulogic;
     variable err_v   : std_ulogic;
   begin
@@ -694,14 +696,14 @@ begin
       DMEM_SIZE => MEM_INT_DMEM_SIZE -- processor-internal data memory size in bytes
     )
     port map (
-      clk_i  => clk_i,                     -- global clock line
-      rden_i => p_bus.re,                  -- read enable
-      wren_i => p_bus.we,                  -- write enable
-      ben_i  => p_bus.ben,                 -- byte write enable
-      addr_i => p_bus.addr,                -- address
-      data_i => p_bus.wdata,               -- data in
-      data_o => resp_bus(RESP_DMEM).rdata, -- data out
-      ack_o  => resp_bus(RESP_DMEM).ack    -- transfer acknowledge
+      clk_i       => clk_i,                     -- global clock line
+      rden_i      => p_bus.re,                  -- read enable
+      wren_i      => p_bus.we,                  -- write enable
+      ben_i       => p_bus.ben,                 -- byte write enable
+      addr_i      => p_bus.addr,                -- address
+      data_i      => p_bus.wdata,               -- data in
+      data_o      => resp_bus(RESP_DMEM).rdata, -- data out
+      ack_o       => resp_bus(RESP_DMEM).ack    -- transfer acknowledge
     );
     resp_bus(RESP_DMEM).err <= '0'; -- no access error possible
   end generate;
@@ -807,6 +809,7 @@ begin
 
   -- Custom Functions Subsystem (CFS) -------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_cfs_inst_true:
   if (IO_CFS_EN = true) generate
     neorv32_cfs_inst: neorv32_cfs
@@ -1054,6 +1057,7 @@ begin
 
   -- Serial Peripheral Interface (SPI) ------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_spi_inst_true:
   if (IO_SPI_EN = true) generate
     neorv32_spi_inst: neorv32_spi
@@ -1093,6 +1097,7 @@ begin
 
   -- Two-Wire Interface (TWI) ---------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_twi_inst_true:
   if (IO_TWI_EN = true) generate
     neorv32_twi_inst: neorv32_twi
@@ -1129,6 +1134,7 @@ begin
 
   -- Pulse-Width Modulation Controller (PWM) ------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_pwm_inst_true:
   if (IO_PWM_NUM_CH > 0) generate
     neorv32_pwm_inst: neorv32_pwm
@@ -1163,6 +1169,7 @@ begin
 
   -- Numerically-Controlled Oscillator (NCO) ------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_nco_inst_true:
   if (IO_NCO_EN = true) generate
     neorv32_nco_inst: neorv32_nco
@@ -1194,6 +1201,7 @@ begin
 
   -- True Random Number Generator (TRNG) ----------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_trng_inst_true:
   if (IO_TRNG_EN = true) generate
     neorv32_trng_inst: neorv32_trng
@@ -1218,6 +1226,7 @@ begin
 
   -- Smart LED (WS2811/WS2812) Interface (NEOLED) -------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFED FOR DIFT
   neorv32_neoled_inst_true:
   if (IO_NEOLED_EN = true) generate
     neorv32_neoled_inst: neorv32_neoled
@@ -1302,7 +1311,7 @@ begin
   -- **************************************************************************************************************************
   -- On-Chip Debugger Complex
   -- **************************************************************************************************************************
-
+  -- NOT MODIFIED FOR DIFT!
 
   -- On-Chip Debugger - Debug Module (DM) ---------------------------------------------------
   -- -------------------------------------------------------------------------------------------

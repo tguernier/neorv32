@@ -33,6 +33,7 @@
 -- #################################################################################################
 
 -- TODO: connect DIFT tags input and output to CPU bus
+-- TODO: add datain port for DIFT
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -47,14 +48,14 @@ entity neorv32_dmem is
     DMEM_SIZE : natural := 4*1024  -- processor-internal instruction memory size in bytes
   );
   port (
-    clk_i  : in  std_ulogic; -- global clock line
-    rden_i : in  std_ulogic; -- read enable
-    wren_i : in  std_ulogic; -- write enable
-    ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
-    addr_i : in  std_ulogic_vector(31 downto 0); -- address
-    data_i : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
-    ack_o  : out std_ulogic -- transfer acknowledge
+    clk_i       : in  std_ulogic; -- global clock line
+    rden_i      : in  std_ulogic; -- read enable
+    wren_i      : in  std_ulogic; -- write enable
+    ben_i       : in  std_ulogic_vector(03 downto 0); -- byte write enable
+    addr_i      : in  std_ulogic_vector(31 downto 0); -- address
+    data_i      : in  std_ulogic_vector(31 downto 0); -- data in
+    data_o      : out std_ulogic_vector(35 downto 0); -- data out
+    ack_o       : out std_ulogic -- transfer acknowledge
   );
 end neorv32_dmem;
 
@@ -65,10 +66,11 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   constant lo_abb_c : natural := index_size_f(DMEM_SIZE); -- low address boundary bit
 
   -- local signals --
-  signal acc_en : std_ulogic;
-  signal rdata  : std_ulogic_vector(31 downto 0);
-  signal rden   : std_ulogic;
-  signal addr   : std_ulogic_vector(index_size_f(DMEM_SIZE/4)-1 downto 0);
+  signal acc_en     : std_ulogic;
+  signal rdata      : std_ulogic_vector(31 downto 0);
+  signal dift_rdata : std_ulogic_vector(03 downto 0);
+  signal rden       : std_ulogic;
+  signal addr       : std_ulogic_vector(index_size_f(DMEM_SIZE/4)-1 downto 0);
 
   -- -------------------------------------------------------------------------------------------------------------- --
   -- The memory (RAM) is built from 4 individual byte-wide memories b0..b3, since some synthesis tools have         --
@@ -157,9 +159,9 @@ begin
 
   -- pack --
   rdata <= mem_ram_b3_rd & mem_ram_b2_rd & mem_ram_b1_rd & mem_ram_b0_rd;
+  dift_rdata <= mem_tag_b3_rd & mem_tag_b2_rd & mem_tag_b1_rd & mem_tag_b0_rd;
 
   -- output gate --
-  data_o <= rdata when (rden = '1') else (others => '0');
-
+  data_o <= rdata & dift_rdata when (rden = '1') else (others => '0');
 
 end neorv32_dmem_rtl;

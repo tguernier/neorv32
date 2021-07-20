@@ -82,7 +82,7 @@ entity neorv32_sysinfo is
     clk_i  : in  std_ulogic; -- global clock line
     addr_i : in  std_ulogic_vector(31 downto 0); -- address
     rden_i : in  std_ulogic; -- read enable
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
+    data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic  -- transfer acknowledge
   );
 end neorv32_sysinfo;
@@ -183,7 +183,7 @@ begin
       ack_o  <= rden;
       data_o <= (others => '0');
       if (rden = '1') then
-        data_o <= sysinfo_mem(to_integer(unsigned(info_addr)));
+        data_o <= sysinfo_mem(to_integer(unsigned(info_addr))) & "0000"; -- no DIFT tag
       end if;
     end if;
   end process read_access;

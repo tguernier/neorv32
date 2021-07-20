@@ -50,7 +50,7 @@ entity neorv32_mtime is
     rden_i : in  std_ulogic; -- read enable
     wren_i : in  std_ulogic; -- write enable
     data_i : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
+    data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic; -- transfer acknowledge
     -- time output for CPU --
     time_o : out std_ulogic_vector(63 downto 0); -- current system time
@@ -148,13 +148,13 @@ begin
       if (rden_i = '1') and (acc_en = '1') then
         case addr is
           when mtime_time_lo_addr_c => -- mtime LOW
-            data_o <= mtime_lo;
+            data_o <= mtime_lo & "0000";
           when mtime_time_hi_addr_c => -- mtime HIGH
-            data_o <= mtime_hi;
+            data_o <= mtime_hi & "0000";
           when mtime_cmp_lo_addr_c => -- mtimecmp LOW
-            data_o <= mtimecmp_lo;
+            data_o <= mtimecmp_lo & "0000";
           when others => -- mtime_cmp_hi_addr_c -- mtimecmp HIGH
-            data_o <= mtimecmp_hi;
+            data_o <= mtimecmp_hi & "0000";
         end case;
       end if;
     end if;
