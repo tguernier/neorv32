@@ -104,7 +104,7 @@ begin
       data_o <= (others => '0');
       if ((acc_en and rden_i) = '1') then
         if (addr = gpio_in_addr_c) then
-          data_o <= din; -- data input port
+          data_o <= din & "0000"; -- data input port
         else -- gpio_out_addr_c
           data_o <= dout & "0000"; -- data output port, no DIFT tags
         end if;

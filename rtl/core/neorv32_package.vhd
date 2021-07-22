@@ -1461,7 +1461,7 @@ package neorv32_package is
       ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic -- transfer acknowledge
     );
   end component;
@@ -1480,7 +1480,7 @@ package neorv32_package is
       ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic -- transfer acknowledge
     );
   end component;
@@ -1495,7 +1495,7 @@ package neorv32_package is
       clk_i  : in  std_ulogic; -- global clock line
       rden_i : in  std_ulogic; -- read enable
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic -- transfer acknowledge
     );
   end component;
@@ -1510,7 +1510,7 @@ package neorv32_package is
       rden_i : in  std_ulogic; -- read enable
       wren_i : in  std_ulogic; -- write enable
       data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic; -- transfer acknowledge
       -- time output for CPU --
       time_o : out std_ulogic_vector(63 downto 0); -- current system time
@@ -1529,7 +1529,7 @@ package neorv32_package is
       rden_i : in  std_ulogic; -- read enable
       wren_i : in  std_ulogic; -- write enable
       data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic; -- transfer acknowledge
       -- parallel io --
       gpio_o : out std_ulogic_vector(31 downto 0);
@@ -1550,7 +1550,7 @@ package neorv32_package is
       wren_i      : in  std_ulogic; -- write enable
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1574,7 +1574,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1601,7 +1601,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1626,7 +1626,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1652,7 +1652,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1672,7 +1672,7 @@ package neorv32_package is
       rden_i : in  std_ulogic; -- read enable
       wren_i : in  std_ulogic; -- write enable
       data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic  -- transfer acknowledge
     );
   end component;
@@ -1701,7 +1701,7 @@ package neorv32_package is
       wren_i    : in  std_ulogic; -- write enable
       ben_i     : in  std_ulogic_vector(03 downto 0); -- byte write enable
       data_i    : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o    : out std_ulogic_vector(31 downto 0); -- data out
+      data_o    : out std_ulogic_vector(35 downto 0); -- data out
       lock_i    : in  std_ulogic; -- exclusive access request
       ack_o     : out std_ulogic; -- transfer acknowledge
       err_o     : out std_ulogic; -- transfer error
@@ -1737,7 +1737,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- word write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1763,7 +1763,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1783,7 +1783,7 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1837,7 +1837,7 @@ package neorv32_package is
       clk_i  : in  std_ulogic; -- global clock line
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       rden_i : in  std_ulogic; -- read enable
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic  -- transfer acknowledge
     );
   end component;
@@ -1865,7 +1865,7 @@ package neorv32_package is
       cpu_rden_i       : in  std_ulogic; -- read enable
       cpu_wren_i       : in  std_ulogic; -- write enable
       cpu_data_i       : in  std_ulogic_vector(31 downto 0); -- data in
-      cpu_data_o       : out std_ulogic_vector(31 downto 0); -- data out
+      cpu_data_o       : out std_ulogic_vector(35 downto 0); -- data out
       cpu_ack_o        : out std_ulogic; -- transfer acknowledge
       -- CPU control --
       cpu_ndmrstn_o    : out std_ulogic; -- soc reset

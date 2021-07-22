@@ -135,7 +135,7 @@ begin
       end if;
     end process mem_access;
     -- read data --
-    rdata <= mem_rom_rd;
+    rdata <= mem_rom_rd & "0000";
   end generate;
 
 

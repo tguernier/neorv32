@@ -271,7 +271,7 @@ architecture neorv32_top_rtl of neorv32_top is
 
   -- module response bus - entry type --
   type resp_bus_entry_t is record
-    rdata : std_ulogic_vector(dift_bus_w_c-1 downto 0);
+    rdata : std_ulogic_vector(35 downto 0);
     ack   : std_ulogic;
     err   : std_ulogic;
   end record;
@@ -511,6 +511,7 @@ begin
 
   -- CPU Instruction Cache ------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
+  -- NOT MODIFIED FOR DIFT!
   neorv32_icache_inst_true:
   if (ICACHE_EN = true) generate
     neorv32_icache_inst: neorv32_icache
@@ -612,6 +613,7 @@ begin
   p_bus.fence <= cpu_d.fence or cpu_i.fence;
 
   -- bus response --
+  -- TODO: Make p_bus wider
   bus_response: process(resp_bus, bus_keeper_err)
     variable rdata_v : std_ulogic_vector(dift_bus_w_c-1 downto 0);
     variable ack_v   : std_ulogic;
@@ -621,11 +623,11 @@ begin
     ack_v   := '0';
     err_v   := '0';
     for i in resp_bus'range loop
-      rdata_v := rdata_v or resp_bus(i).rdata; -- read data
+      rdata_v := rdata_v or resp_bus(i).rdata; -- read data 
       ack_v   := ack_v   or resp_bus(i).ack;   -- acknowledge
       err_v   := err_v   or resp_bus(i).err;   -- error
     end loop; -- i
-    p_bus.rdata <= rdata_v; -- processor bus: CPU transfer data input
+    p_bus.rdata <= rdata_v(data_width_c-1 downto 0); -- processor bus: CPU transfer data input
     p_bus.ack   <= ack_v;   -- processor bus: CPU transfer ACK input
     p_bus.err   <= err_v or bus_keeper_err; -- processor bus: CPU transfer data bus error input
   end process;
