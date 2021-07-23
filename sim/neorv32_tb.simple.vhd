@@ -161,25 +161,25 @@ begin
     HW_THREAD_ID                 => 0,             -- hardware thread id (hartid) (32-bit)
     INT_BOOTLOADER_EN            => false,         -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
     -- On-Chip Debugger (OCD) --
-    ON_CHIP_DEBUGGER_EN          => true,          -- implement on-chip debugger
+    ON_CHIP_DEBUGGER_EN          => false,          -- implement on-chip debugger
     -- RISC-V CPU Extensions --
-    CPU_EXTENSION_RISCV_A        => true,          -- implement atomic extension?
-    CPU_EXTENSION_RISCV_C        => true,          -- implement compressed extension?
+    CPU_EXTENSION_RISCV_A        => false,          -- implement atomic extension?
+    CPU_EXTENSION_RISCV_C        => false,          -- implement compressed extension?
     CPU_EXTENSION_RISCV_E        => false,         -- implement embedded RF extension?
-    CPU_EXTENSION_RISCV_M        => true,          -- implement muld/div extension?
+    CPU_EXTENSION_RISCV_M        => false,          -- implement muld/div extension?
     CPU_EXTENSION_RISCV_U        => true,          -- implement user mode extension?
-    CPU_EXTENSION_RISCV_Zfinx    => true,          -- implement 32-bit floating-point extension (using INT reg!)
+    CPU_EXTENSION_RISCV_Zfinx    => false,          -- implement 32-bit floating-point extension (using INT reg!)
     CPU_EXTENSION_RISCV_Zicsr    => true,          -- implement CSR system?
-    CPU_EXTENSION_RISCV_Zifencei => true,          -- implement instruction stream sync.?
+    CPU_EXTENSION_RISCV_Zifencei => false,          -- implement instruction stream sync.?
     -- Extension Options --
     FAST_MUL_EN                  => false,         -- use DSPs for M extension's multiplier
     FAST_SHIFT_EN                => false,         -- use barrel shifter for shift operations
     CPU_CNT_WIDTH                => 64,            -- total width of CPU cycle and instret counters (0..64)
     -- Physical Memory Protection (PMP) --
-    PMP_NUM_REGIONS              => 5,             -- number of regions (0..64)
+    PMP_NUM_REGIONS              => 0,             -- number of regions (0..64)
     PMP_MIN_GRANULARITY          => 64*1024,       -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
     -- Hardware Performance Monitors (HPM) --
-    HPM_NUM_CNTS                 => 12,            -- number of implemented HPM counters (0..29)
+    HPM_NUM_CNTS                 => 4,            -- number of implemented HPM counters (0..29)
     HPM_CNT_WIDTH                => 40,            -- total size of HPM counters (0..64)
     -- Internal Instruction memory --
     MEM_INT_IMEM_EN              => int_imem_c ,   -- implement processor-internal instruction memory
@@ -188,29 +188,29 @@ begin
     MEM_INT_DMEM_EN              => int_dmem_c,    -- implement processor-internal data memory
     MEM_INT_DMEM_SIZE            => dmem_size_c,   -- size of processor-internal data memory in bytes
     -- Internal Cache memory --
-    ICACHE_EN                    => true,          -- implement instruction cache
+    ICACHE_EN                    => false,          -- implement instruction cache
     ICACHE_NUM_BLOCKS            => 8,             -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE            => 64,            -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY         => 2,             -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
-    MEM_EXT_EN                   => true,          -- implement external memory bus interface?
+    MEM_EXT_EN                   => false,          -- implement external memory bus interface?
     MEM_EXT_TIMEOUT              => 255,           -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Processor peripherals --
     IO_GPIO_EN                   => true,          -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN                  => true,          -- implement machine system timer (MTIME)?
     IO_UART0_EN                  => true,          -- implement primary universal asynchronous receiver/transmitter (UART0)?
-    IO_UART1_EN                  => true,          -- implement secondary universal asynchronous receiver/transmitter (UART1)?
-    IO_SPI_EN                    => true,          -- implement serial peripheral interface (SPI)?
-    IO_TWI_EN                    => true,          -- implement two-wire interface (TWI)?
-    IO_PWM_NUM_CH                => 30,            -- number of PWM channels to implement (0..60); 0 = disabled
+    IO_UART1_EN                  => false,          -- implement secondary universal asynchronous receiver/transmitter (UART1)?
+    IO_SPI_EN                    => false,          -- implement serial peripheral interface (SPI)?
+    IO_TWI_EN                    => false,          -- implement two-wire interface (TWI)?
+    IO_PWM_NUM_CH                => 0,            -- number of PWM channels to implement (0..60); 0 = disabled
     IO_WDT_EN                    => true,          -- implement watch dog timer (WDT)?
     IO_TRNG_EN                   => false,         -- trng cannot be simulated
-    IO_CFS_EN                    => true,          -- implement custom functions subsystem (CFS)?
+    IO_CFS_EN                    => false,          -- implement custom functions subsystem (CFS)?
     IO_CFS_CONFIG                => (others => '0'), -- custom CFS configuration generic
     IO_CFS_IN_SIZE               => 32,            -- size of CFS input conduit in bits
     IO_CFS_OUT_SIZE              => 32,            -- size of CFS output conduit in bits
-    IO_NCO_EN                    => true,          -- implement numerically-controlled oscillator (NCO)?
-    IO_NEOLED_EN                 => true           -- implement NeoPixel-compatible smart LED interface (NEOLED)?
+    IO_NCO_EN                    => false,          -- implement numerically-controlled oscillator (NCO)?
+    IO_NEOLED_EN                 => false           -- implement NeoPixel-compatible smart LED interface (NEOLED)?
   )
   port map (
     -- Global control --
