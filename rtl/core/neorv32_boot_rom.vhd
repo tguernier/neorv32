@@ -93,7 +93,7 @@ begin
     if rising_edge(clk_i) then
       rden <= rden_i and acc_en;
       if (acc_en = '1') then -- reduce switching activity when not accessed
-        rdata <= mem_rom(to_integer(unsigned(addr))) & "0000"; -- no DIFT tag
+        rdata <= "0000" & mem_rom(to_integer(unsigned(addr))); -- no DIFT tag
       end if;
     end if;
   end process mem_file_access;

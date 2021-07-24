@@ -183,7 +183,7 @@ begin
       ack_o  <= rden;
       data_o <= (others => '0');
       if (rden = '1') then
-        data_o <= sysinfo_mem(to_integer(unsigned(info_addr))) & "0000"; -- no DIFT tag
+        data_o <= "0000" & sysinfo_mem(to_integer(unsigned(info_addr))); -- no DIFT tag
       end if;
     end if;
   end process read_access;

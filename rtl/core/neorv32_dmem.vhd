@@ -162,6 +162,6 @@ begin
   dift_rdata <= mem_tag_b3_rd & mem_tag_b2_rd & mem_tag_b1_rd & mem_tag_b0_rd;
 
   -- output gate --
-  data_o <= rdata & dift_rdata when (rden = '1') else (others => '0');
+  data_o <= (dift_rdata & rdata) when (rden = '1') else (others => '0');
 
 end neorv32_dmem_rtl;

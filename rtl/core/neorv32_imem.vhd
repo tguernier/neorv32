@@ -135,7 +135,7 @@ begin
       end if;
     end process mem_access;
     -- read data --
-    rdata <= mem_rom_rd & "0000";
+    rdata <= "0000" & mem_rom_rd;
   end generate;
 
 
@@ -173,7 +173,7 @@ begin
       end if;
     end process mem_access;
     -- read data --
-    rdata <= mem_b3_rd & mem_b2_rd & mem_b1_rd & mem_b0_rd & "0000"; -- no DIFT tags
+    rdata <= "0000" & mem_b3_rd & mem_b2_rd & mem_b1_rd & mem_b0_rd; -- no DIFT tags
   end generate;
 
 

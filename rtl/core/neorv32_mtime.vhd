@@ -148,13 +148,13 @@ begin
       if (rden_i = '1') and (acc_en = '1') then
         case addr is
           when mtime_time_lo_addr_c => -- mtime LOW
-            data_o <= mtime_lo & "0000";
+            data_o <= "0000" & mtime_lo;
           when mtime_time_hi_addr_c => -- mtime HIGH
-            data_o <= mtime_hi & "0000";
+            data_o <= "0000" & mtime_hi;
           when mtime_cmp_lo_addr_c => -- mtimecmp LOW
-            data_o <= mtimecmp_lo & "0000";
+            data_o <= "0000" & mtimecmp_lo;
           when others => -- mtime_cmp_hi_addr_c -- mtimecmp HIGH
-            data_o <= mtimecmp_hi & "0000";
+            data_o <= "0000" & mtimecmp_hi;
         end case;
       end if;
     end if;
