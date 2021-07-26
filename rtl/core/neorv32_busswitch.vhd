@@ -53,7 +53,7 @@ entity neorv32_busswitch is
     rstn_i          : in  std_ulogic; -- global reset, low-active, async
     -- controller interface a --
     ca_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    ca_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+    ca_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data (for data)
     ca_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     ca_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
     ca_bus_we_i     : in  std_ulogic; -- write enable
@@ -63,7 +63,7 @@ entity neorv32_busswitch is
     ca_bus_err_o    : out std_ulogic; -- bus transfer error
     -- controller interface b --
     cb_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    cb_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+    cb_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data (for instructions)
     cb_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     cb_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
     cb_bus_we_i     : in  std_ulogic; -- write enable
@@ -74,7 +74,7 @@ entity neorv32_busswitch is
     -- peripheral bus --
     p_bus_src_o     : out std_ulogic; -- access source: 0 = A, 1 = B
     p_bus_addr_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    p_bus_rdata_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+    p_bus_rdata_i   : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
     p_bus_wdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     p_bus_ben_o     : out std_ulogic_vector(03 downto 0); -- byte enable
     p_bus_we_o      : out std_ulogic; -- write enable

@@ -34,7 +34,7 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
--- TODO: increase bus width to fit DIFT tag bits (32 bits to 36 bits)
+-- TODO: connect DIFT bits to system
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -80,7 +80,7 @@ entity neorv32_cpu_bus is
     pmp_ctrl_i     : in  pmp_ctrl_if_t; -- configs
     -- instruction bus --
     i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+    i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
     i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
@@ -91,7 +91,7 @@ entity neorv32_cpu_bus is
     i_bus_fence_o  : out std_ulogic; -- fence operation
     -- data bus --
     d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+    d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
     d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable
@@ -346,7 +346,7 @@ begin
   d_bus_we_o    <= d_bus_we_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_we;
   d_bus_re_o    <= d_bus_re_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_re;
   d_bus_fence_o <= ctrl_i(ctrl_bus_fence_c);
-  d_bus_rdata   <= d_bus_rdata_i;
+  d_bus_rdata   <= d_bus_rdata_i(31 downto 0); -- TODO: add DIFT logic
 
   -- additional register stage for control signals if using PMP_NUM_REGIONS > pmp_num_regions_critical_c --
   pmp_dbus_buffer: process(rstn_i, clk_i)
@@ -433,7 +433,7 @@ begin
   i_bus_re      <= ctrl_i(ctrl_bus_if_c) and (not i_misaligned) and (not if_pmp_fault); -- no actual read when misaligned or PMP fault
   i_bus_re_o    <= i_bus_re_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else i_bus_re;
   i_bus_fence_o <= ctrl_i(ctrl_bus_fencei_c);
-  instr_o       <= i_bus_rdata_i;
+  instr_o       <= i_bus_rdata_i(31 downto 0); -- stripping out DIFT tags
 
   -- check instruction access --
   i_misaligned <= '0' when (CPU_EXTENSION_RISCV_C = true) else -- no alignment exceptions possible when using C-extension

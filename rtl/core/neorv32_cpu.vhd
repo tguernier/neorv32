@@ -87,7 +87,7 @@ entity neorv32_cpu is
     sleep_o        : out std_ulogic; -- cpu is in sleep mode when set
     -- instruction bus interface --
     i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0) := (others => '0'); -- bus read data
+    i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
     i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
@@ -99,7 +99,7 @@ entity neorv32_cpu is
     i_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
     -- data bus interface --
     d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0) := (others => '0'); -- bus read data
+    d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
     d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable

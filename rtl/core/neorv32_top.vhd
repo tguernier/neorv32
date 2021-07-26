@@ -231,7 +231,7 @@ architecture neorv32_top_rtl of neorv32_top is
   -- bus interface --
   type bus_interface_t is record
     addr   : std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    rdata  : std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+    rdata  : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
     wdata  : std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     ben    : std_ulogic_vector(03 downto 0); -- byte enable
     we     : std_ulogic; -- write enable
@@ -305,6 +305,7 @@ architecture neorv32_top_rtl of neorv32_top is
   signal mtime_time     : std_ulogic_vector(63 downto 0); -- current system time from MTIME
   signal cpu_sleep      : std_ulogic; -- CPU is in sleep mode when set
   signal bus_keeper_err : std_ulogic; -- bus keeper: bus access timeout
+
 
 begin
 
@@ -447,7 +448,7 @@ begin
     i_bus_priv_o   => cpu_i.priv,   -- privilege level
     -- data bus interface --
     d_bus_addr_o   => cpu_d.addr,   -- bus access address
-    d_bus_rdata_i  => cpu_d.rdata,  -- bus read data
+    d_bus_rdata_i  => cpu_d.rdata,  -- bus read data TODO: change back when CPU modified
     d_bus_wdata_o  => cpu_d.wdata,  -- bus write data
     d_bus_ben_o    => cpu_d.ben,    -- byte enable
     d_bus_we_o     => cpu_d.we,     -- write enable
@@ -512,39 +513,39 @@ begin
   -- CPU Instruction Cache ------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- NOT MODIFIED FOR DIFT!
-  neorv32_icache_inst_true:
-  if (ICACHE_EN = true) generate
-    neorv32_icache_inst: neorv32_icache
-    generic map (
-      ICACHE_NUM_BLOCKS => ICACHE_NUM_BLOCKS,   -- number of blocks (min 2), has to be a power of 2
-      ICACHE_BLOCK_SIZE => ICACHE_BLOCK_SIZE,   -- block size in bytes (min 4), has to be a power of 2
-      ICACHE_NUM_SETS   => ICACHE_ASSOCIATIVITY -- associativity / number of sets (1=direct_mapped), has to be a power of 2
-    )
-    port map (
-      -- global control --
-      clk_i         => clk_i,          -- global clock, rising edge
-      rstn_i        => sys_rstn,       -- global reset, low-active, async
-      clear_i       => cpu_i.fence,    -- cache clear
-      -- host controller interface --
-      host_addr_i   => cpu_i.addr,     -- bus access address
-      host_rdata_o  => cpu_i.rdata,    -- bus read data
-      host_wdata_i  => cpu_i.wdata,    -- bus write data
-      host_ben_i    => cpu_i.ben,      -- byte enable
-      host_we_i     => cpu_i.we,       -- write enable
-      host_re_i     => cpu_i.re,       -- read enable
-      host_ack_o    => cpu_i.ack,      -- bus transfer acknowledge
-      host_err_o    => cpu_i.err,      -- bus transfer error
-      -- peripheral bus interface --
-      bus_addr_o    => i_cache.addr,   -- bus access address
-      bus_rdata_i   => i_cache.rdata,  -- bus read data
-      bus_wdata_o   => i_cache.wdata,  -- bus write data
-      bus_ben_o     => i_cache.ben,    -- byte enable
-      bus_we_o      => i_cache.we,     -- write enable
-      bus_re_o      => i_cache.re,     -- read enable
-      bus_ack_i     => i_cache.ack,    -- bus transfer acknowledge
-      bus_err_i     => i_cache.err     -- bus transfer error
-    );
-  end generate;
+--  neorv32_icache_inst_true:
+--  if (ICACHE_EN = true) generate
+--    neorv32_icache_inst: neorv32_icache
+--    generic map (
+--      ICACHE_NUM_BLOCKS => ICACHE_NUM_BLOCKS,   -- number of blocks (min 2), has to be a power of 2
+--      ICACHE_BLOCK_SIZE => ICACHE_BLOCK_SIZE,   -- block size in bytes (min 4), has to be a power of 2
+--      ICACHE_NUM_SETS   => ICACHE_ASSOCIATIVITY -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+--    )
+--    port map (
+--      -- global control --
+--      clk_i         => clk_i,          -- global clock, rising edge
+--      rstn_i        => sys_rstn,       -- global reset, low-active, async
+--      clear_i       => cpu_i.fence,    -- cache clear
+--      -- host controller interface --
+--      host_addr_i   => cpu_i.addr,     -- bus access address
+--      host_rdata_o  => cpu_i.rdata,    -- bus read data
+--      host_wdata_i  => cpu_i.wdata,    -- bus write data
+--      host_ben_i    => cpu_i.ben,      -- byte enable
+--      host_we_i     => cpu_i.we,       -- write enable
+--      host_re_i     => cpu_i.re,       -- read enable
+--      host_ack_o    => cpu_i.ack,      -- bus transfer acknowledge
+--      host_err_o    => cpu_i.err,      -- bus transfer error
+--      -- peripheral bus interface --
+--      bus_addr_o    => i_cache.addr,   -- bus access address
+--      bus_rdata_i   => i_cache.rdata,  -- bus read data
+--      bus_wdata_o   => i_cache.wdata,  -- bus write data
+--      bus_ben_o     => i_cache.ben,    -- byte enable
+--      bus_we_o      => i_cache.we,     -- write enable
+--      bus_re_o      => i_cache.re,     -- read enable
+--      bus_ack_i     => i_cache.ack,    -- bus transfer acknowledge
+--      bus_err_i     => i_cache.err     -- bus transfer error
+--    );
+--  end generate;
 
   -- TODO: do not use LOCKED instruction fetch --
   i_cache.lock <= '0';
@@ -575,7 +576,7 @@ begin
     rstn_i          => sys_rstn,       -- global reset, low-active, async
     -- controller interface a --
     ca_bus_addr_i   => cpu_d.addr,     -- bus access address
-    ca_bus_rdata_o  => cpu_d.rdata,    -- bus read data
+    ca_bus_rdata_o  => cpu_d.rdata,    -- bus read data (data)
     ca_bus_wdata_i  => cpu_d.wdata,    -- bus write data
     ca_bus_ben_i    => cpu_d.ben,      -- byte enable
     ca_bus_we_i     => cpu_d.we,       -- write enable
@@ -613,7 +614,6 @@ begin
   p_bus.fence <= cpu_d.fence or cpu_i.fence;
 
   -- bus response --
-  -- TODO: Make p_bus wider
   bus_response: process(resp_bus, bus_keeper_err)
     variable rdata_v : std_ulogic_vector(dift_bus_w_c-1 downto 0);
     variable ack_v   : std_ulogic;
@@ -627,7 +627,7 @@ begin
       ack_v   := ack_v   or resp_bus(i).ack;   -- acknowledge
       err_v   := err_v   or resp_bus(i).err;   -- error
     end loop; -- i
-    p_bus.rdata <= rdata_v(data_width_c-1 downto 0); -- processor bus: CPU transfer data input
+    p_bus.rdata <= rdata_v(dift_bus_w_c-1 downto 0); -- processor bus: CPU transfer data input
     p_bus.ack   <= ack_v;   -- processor bus: CPU transfer ACK input
     p_bus.err   <= err_v or bus_keeper_err; -- processor bus: CPU transfer data bus error input
   end process;

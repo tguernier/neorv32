@@ -32,8 +32,6 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
--- TODO: increase data bus width from 32 to 36 for DIFT tags
-
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -1036,7 +1034,7 @@ package neorv32_package is
       sleep_o        : out std_ulogic; -- cpu is in sleep mode when set
       -- instruction bus interface --
       i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0) := (others => '0'); -- bus read data
+      i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
       i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       i_bus_we_o     : out std_ulogic; -- write enable
@@ -1048,7 +1046,7 @@ package neorv32_package is
       i_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
       -- data bus interface --
       d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0) := (others => '0'); -- bus read data
+      d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
       d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       d_bus_we_o     : out std_ulogic; -- write enable
@@ -1306,7 +1304,7 @@ package neorv32_package is
       pmp_ctrl_i     : in  pmp_ctrl_if_t; -- configs
       -- instruction bus --
       i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
       i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       i_bus_we_o     : out std_ulogic; -- write enable
@@ -1317,7 +1315,7 @@ package neorv32_package is
       i_bus_fence_o  : out std_ulogic; -- fence operation
       -- data bus --
       d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
       d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       d_bus_we_o     : out std_ulogic; -- write enable
@@ -1402,7 +1400,7 @@ package neorv32_package is
       rstn_i          : in  std_ulogic; -- global reset, low-active, async
       -- controller interface a --
       ca_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      ca_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      ca_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
       ca_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       ca_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
       ca_bus_we_i     : in  std_ulogic; -- write enable
@@ -1412,7 +1410,7 @@ package neorv32_package is
       ca_bus_err_o    : out std_ulogic; -- bus transfer error
       -- controller interface b --
       cb_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      cb_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      cb_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
       cb_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       cb_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
       cb_bus_we_i     : in  std_ulogic; -- write enable
@@ -1423,7 +1421,7 @@ package neorv32_package is
       -- peripheral bus --
       p_bus_src_o     : out std_ulogic; -- access source: 0 = A, 1 = B
       p_bus_addr_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      p_bus_rdata_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      p_bus_rdata_i   : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
       p_bus_wdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
       p_bus_ben_o     : out std_ulogic_vector(03 downto 0); -- byte enable
       p_bus_we_o      : out std_ulogic; -- write enable
