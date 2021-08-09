@@ -135,7 +135,7 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal rs1, rs2   : std_ulogic_vector(data_width_c-1 downto 0); -- source registers
   signal alu_res    : std_ulogic_vector(data_width_c-1 downto 0); -- alu result
   signal alu_add    : std_ulogic_vector(data_width_c-1 downto 0); -- alu address result
-  signal mem_rdata  : std_ulogic_vector(data_width_c-1 downto 0); -- memory read data
+  signal mem_rdata  : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
   signal alu_idone  : std_ulogic; -- iterative alu operation done
   signal bus_i_wait : std_ulogic; -- wait for current bus instruction fetch
   signal bus_d_wait : std_ulogic; -- wait for current bus data access
@@ -153,8 +153,8 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal fpu_flags  : std_ulogic_vector(4 downto 0); -- FPU exception flags
   
   -- dift signals
-  signal rs1_t      : std_ulogic; -- source register tag bits
-  signal rs2_t      : std_ulogic;
+  signal rs1_t      : std_ulogic_vector(3 downto 0); -- source register tag bits
+  signal rs2_t      : std_ulogic_vector(3 downto 0);
 
   -- pmp interface --
   signal pmp_addr : pmp_addr_if_t;

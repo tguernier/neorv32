@@ -58,13 +58,13 @@ entity neorv32_cpu_regfile is
     clk_i  : in  std_ulogic; -- global clock, rising edge
     ctrl_i : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
     -- data input --
-    mem_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- memory read data
+    mem_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
     alu_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
     -- data output --
     rs1_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
     rs2_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
-    rs1_t_o: out std_ulogic; -- rs1 DIFT tag
-    rs2_t_o: out std_ulogic; -- rs2 DIFT tag
+    rs1_t_o: out std_ulogic_vector(3 downto 0); -- rs1 DIFT tag
+    rs2_t_o: out std_ulogic_vector(3 downto 0); -- rs2 DIFT tag
     cmp_o  : out std_ulogic_vector(1 downto 0) -- comparator status
   );
 end neorv32_cpu_regfile;
@@ -73,8 +73,8 @@ architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
 
   -- types for DIFT system (added by Tom)
   type dift_reg_t is record
-	 reg_contents : std_ulogic_vector(data_width_c-1 downto 0);
-         reg_tag      : std_ulogic;
+	  reg_contents : std_ulogic_vector(data_width_c-1 downto 0);
+    reg_tag      : std_ulogic_vector(3 downto 0);
   end record;
   
   -- register file --
@@ -82,24 +82,29 @@ architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
   type   reg_file_emb_t is array (15 downto 0) of std_ulogic_vector(data_width_c-1 downto 0);
   signal reg_file     : reg_file_t;
   signal reg_file_emb : reg_file_emb_t;
-  signal rf_wdata     : std_ulogic_vector(data_width_c-1 downto 0); -- actual write-back data
+  signal rf_wdata     : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- actual write-back data
   signal rd_is_r0     : std_ulogic; -- writing to r0?
   signal rf_we        : std_ulogic;
   signal dst_addr     : std_ulogic_vector(4 downto 0); -- destination address
   signal opa_addr     : std_ulogic_vector(4 downto 0); -- rs1/dst address
   signal opb_addr     : std_ulogic_vector(4 downto 0); -- rs2 address
   signal rs1, rs2     : std_ulogic_vector(data_width_c-1 downto 0);
-  signal rs1_t, rs2_t : std_ulogic;
+  signal rs1_t, rs2_t : std_ulogic_vector(3 downto 0);
 
   -- comparator --
   signal cmp_opx : std_ulogic_vector(data_width_c downto 0);
   signal cmp_opy : std_ulogic_vector(data_width_c downto 0);
 
+  -- temp ALU var
+  -- TODO: add DIFT tag
+  signal alu_tmp : std_ulogic_vector(dift_bus_w_c-1 downto 0);
+
 begin
 
   -- Data Input Mux -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  rf_wdata <= alu_i when (ctrl_i(ctrl_rf_in_mux_c) = '0') else mem_i;
+  alu_tmp <= "0000" & alu_i;
+  rf_wdata <= alu_tmp when (ctrl_i(ctrl_rf_in_mux_c) = '0') else mem_i;
 
 
   -- Register File Access -------------------------------------------------------------------
@@ -109,19 +114,19 @@ begin
     if rising_edge(clk_i) then -- sync read and write
       if (CPU_EXTENSION_RISCV_E = false) then -- normal register file with 32 entries
         if (rf_we = '1') then
-          reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents <= rf_wdata;
-	  reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag <= '0'; -- TODO: have DIFT logic
+          reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents <= rf_wdata(31 downto 0);
+	        reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag <= rf_wdata(35 downto 32);
         end if;
         rs1 <= reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents;
         rs1_t <= reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag;
         rs2 <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_contents;
         rs2_t <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_tag;
-      else -- embedded register file with 16 entries
-        if (rf_we = '1') then
-          reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0)))) <= rf_wdata;
-        end if;
-        rs1 <= reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0))));
-        rs2 <= reg_file_emb(to_integer(unsigned(opb_addr(3 downto 0))));
+      -- else -- embedded register file with 16 entries
+      --  if (rf_we = '1') then
+      --    reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0)))) <= rf_wdata;
+      --  end if;
+      --  rs1 <= reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0))));
+      --  rs2 <= reg_file_emb(to_integer(unsigned(opb_addr(3 downto 0))));
       end if;
     end if;
   end process rf_access;

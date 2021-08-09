@@ -66,7 +66,7 @@ entity neorv32_cpu_bus is
     -- cpu data access interface --
     addr_i         : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result -> access address
     wdata_i        : in  std_ulogic_vector(data_width_c-1 downto 0); -- write data
-    rdata_o        : out std_ulogic_vector(data_width_c-1 downto 0); -- read data
+    rdata_o        : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- read data
     mar_o          : out std_ulogic_vector(data_width_c-1 downto 0); -- current memory address register
     d_wait_o       : out std_ulogic; -- wait for access to complete
     --
@@ -124,11 +124,13 @@ architecture neorv32_cpu_bus_rtl of neorv32_cpu_bus is
 
   -- data interface registers --
   signal mar, mdo, mdi : std_ulogic_vector(data_width_c-1 downto 0);
+  signal mdi_tag       : std_ulogic_vector(3 downto 0); -- data input DIFT tag
 
   -- data access --
   signal d_bus_wdata : std_ulogic_vector(data_width_c-1 downto 0); -- write data
-  signal d_bus_rdata : std_ulogic_vector(data_width_c-1 downto 0); -- read data
+  signal d_bus_rdata : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- read data
   signal rdata_align : std_ulogic_vector(data_width_c-1 downto 0); -- read-data alignment
+  signal r_tag_align : std_ulogic_vector(3 downto 0);
   signal d_bus_ben   : std_ulogic_vector(3 downto 0); -- write data byte enable
 
   -- misaligned access? --
@@ -264,40 +266,60 @@ begin
   begin
     if (rstn_i = '0') then
       mdi <= (others => def_rst_val_c);
+      mdi_tag <= (others => '0');
     elsif rising_edge(clk_i) then
       if (ctrl_i(ctrl_bus_mi_we_c) = '1') then
-        mdi <= d_bus_rdata; -- memory data input register (MDI)
+        mdi <= d_bus_rdata(31 downto 0); -- memory data input register (MDI)
+        mdi_tag <= d_bus_rdata(35 downto 32);
       end if;
     end if;
   end process mem_di_reg;
 
   -- input data alignment and sign extension --
   read_align: process(mdi, mar, ctrl_i)
-    variable byte_in_v  : std_ulogic_vector(07 downto 0); 
-    variable hword_in_v : std_ulogic_vector(15 downto 0);
+    variable byte_in_v    : std_ulogic_vector(07 downto 0); 
+    variable byte_tag_v   : std_ulogic;
+    variable hword_in_v   : std_ulogic_vector(15 downto 0);
+    variable hword_tag_v  : std_ulogic_vector(1 downto 0);
   begin
     -- sub-word input --
     case mar(1 downto 0) is
-      when "00"   => byte_in_v := mdi(07 downto 00); hword_in_v := mdi(15 downto 00); -- byte 0 / half-word 0
-      when "01"   => byte_in_v := mdi(15 downto 08); hword_in_v := mdi(15 downto 00); -- byte 1 / half-word 0
-      when "10"   => byte_in_v := mdi(23 downto 16); hword_in_v := mdi(31 downto 16); -- byte 2 / half-word 1
-      when others => byte_in_v := mdi(31 downto 24); hword_in_v := mdi(31 downto 16); -- byte 3 / half-word 1
+      when "00"   => byte_in_v    := mdi(07 downto 00); -- byte 0 / half-word 0
+                     byte_tag_v   := mdi_tag(0);
+                     hword_in_v   := mdi(15 downto 00);
+                     hword_tag_v  := mdi_tag(1 downto 0);
+      when "01"   => byte_in_v    := mdi(15 downto 08); -- byte 1 / half-word 0
+                     byte_tag_v   := mdi_tag(1);
+                     hword_in_v   := mdi(15 downto 00);
+                     hword_tag_v  := mdi_tag(1 downto 0);
+      when "10"   => byte_in_v    := mdi(23 downto 16); -- byte 2 / half-word 1
+                     byte_tag_v   := mdi_tag(2);
+                     hword_in_v   := mdi(31 downto 16);
+                     hword_tag_v  := mdi_tag(3 downto 2);
+      when others => byte_in_v    := mdi(31 downto 24); -- byte 3 / half-word 1
+                     byte_tag_v   := mdi_tag(3);
+                     hword_in_v   := mdi(31 downto 16);
+                     hword_tag_v  := mdi_tag(3 downto 2);
     end case;
     -- actual data size --
     case ctrl_i(ctrl_bus_size_msb_c downto ctrl_bus_size_lsb_c) is
       when "00" => -- byte
         rdata_align(31 downto 08) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and byte_in_v(7))); -- sign extension
         rdata_align(07 downto 00) <= byte_in_v;
+        r_tag_align(0) <= byte_tag_v;
       when "01" => -- half-word
         rdata_align(31 downto 16) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and hword_in_v(15))); -- sign extension
         rdata_align(15 downto 00) <= hword_in_v; -- high half-word
+        r_tag_align(1 downto 0) <= hword_tag_v; 
       when others => -- word
         rdata_align <= mdi; -- full word
+        r_tag_align <= mdi_tag;
     end case;
   end process read_align;
 
   -- insert exclusive lock status for SC operations only --
-  rdata_o <= exclusive_lock_status when (CPU_EXTENSION_RISCV_A = true) and (ctrl_i(ctrl_bus_ch_lock_c) = '1') else rdata_align;
+  rdata_o(35 downto 32) <= r_tag_align;
+  rdata_o(31 downto 0) <= exclusive_lock_status when (CPU_EXTENSION_RISCV_A = true) and (ctrl_i(ctrl_bus_ch_lock_c) = '1') else rdata_align;
 
 
   -- Data Access Arbiter --------------------------------------------------------------------
@@ -346,7 +368,7 @@ begin
   d_bus_we_o    <= d_bus_we_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_we;
   d_bus_re_o    <= d_bus_re_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_re;
   d_bus_fence_o <= ctrl_i(ctrl_bus_fence_c);
-  d_bus_rdata   <= d_bus_rdata_i(31 downto 0); -- TODO: add DIFT logic
+  d_bus_rdata   <= d_bus_rdata_i;
 
   -- additional register stage for control signals if using PMP_NUM_REGIONS > pmp_num_regions_critical_c --
   pmp_dbus_buffer: process(rstn_i, clk_i)
