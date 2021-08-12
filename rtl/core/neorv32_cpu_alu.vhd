@@ -62,10 +62,15 @@ entity neorv32_cpu_alu is
     imm_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- immediate
     csr_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
     cmp_i       : in  std_ulogic_vector(1 downto 0); -- comparator status
+    -- dift input --
+    rs1_tag_i   : in  std_ulogic_vector(3 downto 0); -- rf source 1 dift tag
+    rs2_tag_i   : in  std_ulogic_vector(3 downto 0); -- rf source 2 dift tag
     -- data output --
     res_o       : out std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
     add_o       : out std_ulogic_vector(data_width_c-1 downto 0); -- address computation result
     fpu_flags_o : out std_ulogic_vector(4 downto 0); -- FPU exception flags
+    -- dift output --
+    tag_o       : out std_ulogic_vector(3 downto 0); -- DIFT ALU result
     -- status --
     idone_o     : out std_ulogic -- iterative processing units done?
   );
@@ -75,13 +80,14 @@ architecture neorv32_cpu_cpu_rtl of neorv32_cpu_alu is
 
   -- operands --
   signal opa, opb : std_ulogic_vector(data_width_c-1 downto 0);
+  signal opa_tag, opb_tag : std_ulogic_vector(3 downto 0);
 
   -- results --
-  signal addsub_res : std_ulogic_vector(data_width_c downto 0);
-  --
-  signal cp_res     : std_ulogic_vector(data_width_c-1 downto 0);
-  signal arith_res  : std_ulogic_vector(data_width_c-1 downto 0);
-  signal logic_res  : std_ulogic_vector(data_width_c-1 downto 0);
+  signal addsub_res   : std_ulogic_vector(data_width_c downto 0);
+  signal dift_alu_res : std_ulogic_vector(3 downto 0);
+  signal cp_res       : std_ulogic_vector(data_width_c-1 downto 0);
+  signal arith_res    : std_ulogic_vector(data_width_c-1 downto 0);
+  signal logic_res    : std_ulogic_vector(data_width_c-1 downto 0);
 
   -- co-processor arbiter and interface --
   type cp_ctrl_t is record
@@ -105,6 +111,8 @@ begin
   opa <= pc2_i when (ctrl_i(ctrl_alu_opa_mux_c) = '1') else rs1_i; -- operand a (first ALU input operand), only required for arithmetic ops
   opb <= imm_i when (ctrl_i(ctrl_alu_opb_mux_c) = '1') else rs2_i; -- operand b (second ALU input operand)
 
+  opa_tag <= "0000" when (ctrl_i(ctrl_alu_opa_mux_c) = '1') else rs1_tag_i; -- TODO: PC dift tag
+  opb_tag <= "0000" when (ctrl_i(ctrl_alu_opb_mux_c) = '1') else rs2_tag_i;
 
   -- Binary Adder/Subtracter ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -219,6 +227,31 @@ begin
     end case;
   end process alu_function_mux;
 
+  -- Binary DIFT ALU --------------------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  -- Operations --------------------------------------------------------------------------------
+  -- 0b00: alu_res <= 0b0000 -------------------------------------------------------------------
+  -- 0b01: alu_res <= rs1_tag_i AND rs2_tag_i --------------------------------------------------
+  -- 0b10: alu_res <= rs1_tag_i OR  rs2_tag_i --------------------------------------------------
+  -- 0b11: alu_res <= rs1_tag_i ----------------------------------------------------------------
+  ---------------------------------------------------------------------------------------------
+  dift_alu_core: process(ctrl_i, opa_tag, opb_tag)
+  begin
+    case ctrl_i(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) is
+      when "00" =>
+        dift_alu_res <= "0000";
+      when "01" =>
+        dift_alu_res <= opa_tag and opb_tag;
+      when "10" =>
+        dift_alu_res <= opa_tag or opb_tag;
+      when "11" =>
+        dift_alu_res <= opa_tag;
+      when others =>
+        dift_alu_res <= "0000";
+    end case;
+  end process dift_alu_core;
+
+  tag_o <= dift_alu_res;
 
   -- **************************************************************************************************************************
   -- Co-Processors

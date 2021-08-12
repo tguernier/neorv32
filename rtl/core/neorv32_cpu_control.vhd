@@ -828,6 +828,8 @@ begin
     end if;
     -- FPU rounding mode --
     ctrl_o(ctrl_alu_frm2_c downto ctrl_alu_frm0_c) <= csr.frm;
+    -- DIFT control
+    ctrl_o(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= "10"; -- TODO: add control logic
   end process ctrl_output;
 
 

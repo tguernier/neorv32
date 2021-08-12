@@ -355,8 +355,11 @@ package neorv32_package is
   constant ctrl_sleep_c         : natural := 73; -- set when CPU is in sleep mode
   constant ctrl_trap_c          : natural := 74; -- set when CPU is entering trap execution
   constant ctrl_debug_running_c : natural := 75; -- CPU is in debug mode when set
+  -- DIFT control --
+  constant ctrl_dift_alu_lsb_c  : natural := 76; -- DIFT ALU control input LSB
+  constant ctrl_dift_alu_msb_c  : natural := 77; -- DIFT ALU control input MSB
   -- control bus size --
-  constant ctrl_width_c         : natural := 76; -- control bus size
+  constant ctrl_width_c         : natural := 78; -- control bus size
 
   -- Comparator Bus -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -1193,10 +1196,15 @@ package neorv32_package is
       imm_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- immediate
       csr_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
       cmp_i       : in  std_ulogic_vector(1 downto 0); -- comparator status
+      -- dift input --
+      rs1_tag_i   : in  std_ulogic_vector(3 downto 0); -- rf source 1 DIFT tag
+      rs2_tag_i   : in  std_ulogic_vector(3 downto 0); -- rf source 2 DIFT tag
       -- data output --
       res_o       : out std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
       add_o       : out std_ulogic_vector(data_width_c-1 downto 0); -- address computation result
       fpu_flags_o : out std_ulogic_vector(4 downto 0); -- FPU exception flags
+      -- dift output --
+      tag_o       : out std_ulogic_vector(3 downto 0); -- DIFT tag result
       -- status --
       idone_o     : out std_ulogic -- iterative processing units done?
     );

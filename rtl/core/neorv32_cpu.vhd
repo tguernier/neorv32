@@ -135,6 +135,7 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal rs1, rs2   : std_ulogic_vector(data_width_c-1 downto 0); -- source registers
   signal alu_res    : std_ulogic_vector(data_width_c-1 downto 0); -- alu result
   signal alu_add    : std_ulogic_vector(data_width_c-1 downto 0); -- alu address result
+  signal tag_res    : std_ulogic_vector(3 downto 0);              -- DIFT alu result
   signal mem_rdata  : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
   signal alu_idone  : std_ulogic; -- iterative alu operation done
   signal bus_i_wait : std_ulogic; -- wait for current bus instruction fetch
@@ -297,7 +298,7 @@ begin
     -- data output --
     rs1_o   => rs1,                -- operand 1
     rs2_o   => rs2,                -- operand 2
-    rs1_t_o => rs1_t,              -- operand 1 tag bit TODO: connect to ALU
+    rs1_t_o => rs1_t,              -- operand 1 tag bit
     rs2_t_o => rs2_t,              -- operand 2 tag bit
     cmp_o   => comparator          -- comparator status
   );
@@ -326,10 +327,15 @@ begin
     imm_i       => imm,           -- immediate
     csr_i       => csr_rdata,     -- CSR read data
     cmp_i       => comparator,    -- comparator status
+    -- dift input --
+    rs1_tag_i   => rs1_t,         -- rf source 1 tag
+    rs2_tag_i   => rs2_t,         -- rf source 2 tag
     -- data output --
     res_o       => alu_res,       -- ALU result
     add_o       => alu_add,       -- address computation result
     fpu_flags_o => fpu_flags,     -- FPU exception flags
+    -- dift output --
+    tag_o       => tag_res,       -- DIFT tag ALU result TODO: connect to tag check
     -- status --
     idone_o     => alu_idone      -- iterative processing units done?
   );
