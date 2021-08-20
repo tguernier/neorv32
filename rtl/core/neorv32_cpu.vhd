@@ -88,7 +88,7 @@ entity neorv32_cpu is
     -- instruction bus interface --
     i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
     i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
-    i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    i_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
     i_bus_re_o     : out std_ulogic; -- read enable
@@ -100,7 +100,7 @@ entity neorv32_cpu is
     -- data bus interface --
     d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
     d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
-    d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    d_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable
     d_bus_re_o     : out std_ulogic; -- read enable
@@ -156,6 +156,7 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   -- dift signals
   signal rs1_t      : std_ulogic_vector(3 downto 0); -- source register tag bits
   signal rs2_t      : std_ulogic_vector(3 downto 0);
+  signal rs2_tagged : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- rs2 (register output to bus) with tag
 
   -- pmp interface --
   signal pmp_addr : pmp_addr_if_t;
@@ -340,6 +341,8 @@ begin
     idone_o     => alu_idone      -- iterative processing units done?
   );
 
+  rs2_tagged <= rs2_t & rs2; -- recombine register contents and tag
+
 
   -- Bus Interface Unit ---------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -365,7 +368,7 @@ begin
     be_instr_o     => be_instr,       -- bus error on instruction access
     -- cpu data access interface --
     addr_i         => alu_add,        -- ALU.add result -> access address
-    wdata_i        => rs2,            -- write data
+    wdata_i        => rs2_tagged,     -- write data
     rdata_o        => mem_rdata,      -- read data
     mar_o          => mar,            -- current memory address register
     d_wait_o       => bus_d_wait,     -- wait for access to complete

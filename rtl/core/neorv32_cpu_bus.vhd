@@ -65,7 +65,7 @@ entity neorv32_cpu_bus is
     be_instr_o     : out std_ulogic; -- bus error on instruction access
     -- cpu data access interface --
     addr_i         : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result -> access address
-    wdata_i        : in  std_ulogic_vector(data_width_c-1 downto 0); -- write data
+    wdata_i        : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- write data
     rdata_o        : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- read data
     mar_o          : out std_ulogic_vector(data_width_c-1 downto 0); -- current memory address register
     d_wait_o       : out std_ulogic; -- wait for access to complete
@@ -81,7 +81,7 @@ entity neorv32_cpu_bus is
     -- instruction bus --
     i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
     i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
-    i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    i_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
     i_bus_re_o     : out std_ulogic; -- read enable
@@ -92,7 +92,7 @@ entity neorv32_cpu_bus is
     -- data bus --
     d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
     d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
-    d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    d_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable
     d_bus_re_o     : out std_ulogic; -- read enable
@@ -125,9 +125,10 @@ architecture neorv32_cpu_bus_rtl of neorv32_cpu_bus is
   -- data interface registers --
   signal mar, mdo, mdi : std_ulogic_vector(data_width_c-1 downto 0);
   signal mdi_tag       : std_ulogic_vector(3 downto 0); -- data input DIFT tag
+  signal mdo_tag       : std_ulogic_vector(3 downto 0); -- data output DIFT tag
 
   -- data access --
-  signal d_bus_wdata : std_ulogic_vector(data_width_c-1 downto 0); -- write data
+  signal d_bus_wdata : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- write data
   signal d_bus_rdata : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- read data
   signal rdata_align : std_ulogic_vector(data_width_c-1 downto 0); -- read-data alignment
   signal r_tag_align : std_ulogic_vector(3 downto 0);
@@ -223,9 +224,11 @@ begin
   begin
     if (rstn_i = '0') then
       mdo <= (others => def_rst_val_c);
+      mdo_tag <= (others => def_rst_val_c);
     elsif rising_edge(clk_i) then
       if (ctrl_i(ctrl_bus_mo_we_c) = '1') then
-        mdo <= wdata_i; -- memory data output register (MDO)
+        mdo <= wdata_i(31 downto 0); -- memory data output register (MDO)
+        mdo_tag <= wdata_i(35 downto 32);
       end if;
     end if;
   end process mem_do_reg;
@@ -235,26 +238,29 @@ begin
   begin
     case ctrl_i(ctrl_bus_size_msb_c downto ctrl_bus_size_lsb_c) is -- data size
       when "00" => -- byte
+        -- register data
         d_bus_wdata(07 downto 00) <= mdo(07 downto 00);
         d_bus_wdata(15 downto 08) <= mdo(07 downto 00);
         d_bus_wdata(23 downto 16) <= mdo(07 downto 00);
         d_bus_wdata(31 downto 24) <= mdo(07 downto 00);
+        -- tag data
+        d_bus_wdata(32) <= mdo_tag(0);
+        d_bus_wdata(33) <= mdo_tag(0);
+        d_bus_wdata(34) <= mdo_tag(0);
+        d_bus_wdata(35) <= mdo_tag(0);
         case mar(1 downto 0) is
           when "00"   => d_bus_ben <= "0001";
           when "01"   => d_bus_ben <= "0010";
           when "10"   => d_bus_ben <= "0100";
           when others => d_bus_ben <= "1000";
         end case;
-      when "01" => -- half-word
-        d_bus_wdata(31 downto 16) <= mdo(15 downto 00);
-        d_bus_wdata(15 downto 00) <= mdo(15 downto 00);
         if (mar(1) = '0') then
           d_bus_ben <= "0011"; -- low half-word
         else
           d_bus_ben <= "1100"; -- high half-word
         end if;
       when others => -- word
-        d_bus_wdata <= mdo;
+        d_bus_wdata <= mdo_tag & mdo;
         d_bus_ben   <= "1111"; -- full word
     end case;
   end process byte_enable;

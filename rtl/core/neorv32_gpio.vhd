@@ -49,7 +49,7 @@ entity neorv32_gpio is
     addr_i : in  std_ulogic_vector(31 downto 0); -- address
     rden_i : in  std_ulogic; -- read enable
     wren_i : in  std_ulogic; -- write enable
-    data_i : in  std_ulogic_vector(31 downto 0); -- data in
+    data_i : in  std_ulogic_vector(35 downto 0); -- data in
     data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic; -- transfer acknowledge
     -- parallel io --
@@ -73,7 +73,7 @@ architecture neorv32_gpio_rtl of neorv32_gpio is
   -- accessible regs --
   signal din    : std_ulogic_vector(31 downto 0); -- r/-
   signal dout   : std_ulogic_vector(31 downto 0); -- r/w
-  signal irq_en : std_ulogic_vector(31 downto 0); -- -/w, uses the same address as data_in
+  signal irq_en : std_ulogic_vector(31 downto 0); -- -/w, uses the same address as 5ata_in
 
   -- misc --
   signal in_buf : std_ulogic_vector(31 downto 0);
@@ -95,9 +95,9 @@ begin
       -- write access --
       if ((acc_en and wren_i) = '1') then
         if (addr = gpio_in_addr_c) then
-          irq_en <= data_i; -- pin change IRQ enable
+          irq_en <= data_i(31 downto 0); -- pin change IRQ enable
         else -- gpio_out_addr_c
-          dout <= data_i; -- data output port
+          dout <= data_i(31 downto 0); -- data output port
         end if;
       end if;
       -- read access --

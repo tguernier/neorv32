@@ -75,8 +75,8 @@ entity neorv32_debug_dm is
     cpu_addr_i       : in  std_ulogic_vector(31 downto 0); -- address
     cpu_rden_i       : in  std_ulogic; -- read enable
     cpu_wren_i       : in  std_ulogic; -- write enable
-    cpu_data_i       : in  std_ulogic_vector(31 downto 0); -- data in
-    cpu_data_o       : out std_ulogic_vector(31 downto 0); -- data out
+    cpu_data_i       : in  std_ulogic_vector(35 downto 0); -- data in
+    cpu_data_o       : out std_ulogic_vector(35 downto 0); -- data out
     cpu_ack_o        : out std_ulogic; -- transfer acknowledge
     -- CPU control --
     cpu_ndmrstn_o    : out std_ulogic; -- soc reset
@@ -684,7 +684,7 @@ begin
       if (dci.data_we = '1') then -- DM write access
         data_buf <= dci.wdata;
       elsif (acc_en = '1') and (maddr = "10") and (wren = '1') then -- BUS write access
-        data_buf <= cpu_data_i;
+        data_buf <= cpu_data_i(31 downto 0);
       end if;
       -- Control and Status Register --
       dci.halt_ack      <= '0'; -- all writable flags auto-clear
@@ -714,11 +714,11 @@ begin
       if (rden = '1') then -- output gate
         case maddr is -- module select
           when "00" => -- code ROM
-            cpu_data_o <= code_rom_file(to_integer(unsigned(cpu_addr_i(6 downto 2))));
+            cpu_data_o <= "0000" & code_rom_file(to_integer(unsigned(cpu_addr_i(6 downto 2))));
           when "01" => -- program buffer
-            cpu_data_o <= cpu_progbuf(to_integer(unsigned(cpu_addr_i(3 downto 2))));
+            cpu_data_o <= "0000" & cpu_progbuf(to_integer(unsigned(cpu_addr_i(3 downto 2))));
           when "10" => -- data buffer
-            cpu_data_o <= data_buf;
+            cpu_data_o <= "0000" & data_buf;
           when others => -- status/control register
             cpu_data_o(sreg_resume_req_c)  <= dci.resume_req;
             cpu_data_o(sreg_execute_req_c) <= dci.execute_req;

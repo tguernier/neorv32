@@ -232,7 +232,7 @@ architecture neorv32_top_rtl of neorv32_top is
   type bus_interface_t is record
     addr   : std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
     rdata  : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
-    wdata  : std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    wdata  : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     ben    : std_ulogic_vector(03 downto 0); -- byte enable
     we     : std_ulogic; -- write enable
     re     : std_ulogic; -- read enable
@@ -448,7 +448,7 @@ begin
     i_bus_priv_o   => cpu_i.priv,   -- privilege level
     -- data bus interface --
     d_bus_addr_o   => cpu_d.addr,   -- bus access address
-    d_bus_rdata_i  => cpu_d.rdata,  -- bus read data TODO: change back when CPU modified
+    d_bus_rdata_i  => cpu_d.rdata,  -- bus read data
     d_bus_wdata_o  => cpu_d.wdata,  -- bus write data
     d_bus_ben_o    => cpu_d.ben,    -- byte enable
     d_bus_we_o     => cpu_d.we,     -- write enable
@@ -1318,7 +1318,8 @@ begin
   -- On-Chip Debugger - Debug Module (DM) ---------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   neorv32_neorv32_debug_dm_true:
-  if (ON_CHIP_DEBUGGER_EN = true) generate
+  -- if (ON_CHIP_DEBUGGER_EN = true) generate  
+  if (false) generate
     neorv32_debug_dm_inst: neorv32_debug_dm
     port map (
       -- global control --
