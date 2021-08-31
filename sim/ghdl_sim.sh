@@ -40,6 +40,8 @@ echo ""
 
 # Analyse sources; libs and images at first!
 ghdl -i --work=neorv32 rtl/core/*.vhd
+ghdl -i --work=neorv32 rtl/core/dift/*.vhd
+ghdl -i --work=neorv32 rtl/core/dift/test/*.vhd
 ghdl -i --work=neorv32 rtl/templates/processor/*.vhd
 ghdl -i --work=neorv32 rtl/templates/system/*.vhd
 ghdl -i --work=neorv32 sim/neorv32_tb.simple.vhd

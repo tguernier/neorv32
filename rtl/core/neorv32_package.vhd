@@ -1929,6 +1929,23 @@ package neorv32_package is
       res_o       : out std_ulogic_vector(3 downto 0) -- ALU result
     );
   end component;
+
+  component dift_tag_check
+    port (
+      -- globals --
+      clk_i         : in std_ulogic;
+      rstn_i        : in std_ulogic;
+      dift_ctrl_i   : in std_ulogic_vector(3 downto 0); -- test control input (TODO: add to control bus)
+      -- ctrl_i     : in std_ulogic_vector(ctrl_width-1 downto 0); -- cpu control bus
+      -- data input --
+      rs1_tag_i     : in std_ulogic_vector(3 downto 0); -- rf source 1 dift tag
+      rs2_tag_i     : in std_ulogic_vector(3 downto 0); -- rf source 2 dift tag
+      alu_tag_i     : in std_ulogic_vector(3 downto 0); -- alu result dift tag
+      pc_tag_i      : in std_ulogic;                    -- program counter dift tag
+      -- data output --
+     tag_except_o  : out std_ulogic -- exception signal
+   );
+  end component;
 end package neorv32_package;
 
 package body neorv32_package is
