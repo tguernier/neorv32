@@ -55,17 +55,18 @@ entity neorv32_cpu_regfile is
   );
   port (
     -- global control --
-    clk_i  : in  std_ulogic; -- global clock, rising edge
-    ctrl_i : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
+    clk_i     : in  std_ulogic; -- global clock, rising edge
+    ctrl_i    : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
     -- data input --
-    mem_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
-    alu_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
+    mem_i     : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
+    alu_i     : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
+    alu_tag_i : in  std_ulogic_vector(3 downto 0); -- alu output DIFT tag
     -- data output --
-    rs1_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
-    rs2_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
-    rs1_t_o: out std_ulogic_vector(3 downto 0); -- rs1 DIFT tag
-    rs2_t_o: out std_ulogic_vector(3 downto 0); -- rs2 DIFT tag
-    cmp_o  : out std_ulogic_vector(1 downto 0) -- comparator status
+    rs1_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
+    rs2_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
+    rs1_t_o   : out std_ulogic_vector(3 downto 0); -- rs1 DIFT tag
+    rs2_t_o   : out std_ulogic_vector(3 downto 0); -- rs2 DIFT tag
+    cmp_o     : out std_ulogic_vector(1 downto 0) -- comparator status
   );
 end neorv32_cpu_regfile;
 
@@ -103,7 +104,7 @@ begin
 
   -- Data Input Mux -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  alu_tmp <= "0000" & alu_i;
+  alu_tmp <= alu_tag_i & alu_i;
   rf_wdata <= alu_tmp when (ctrl_i(ctrl_rf_in_mux_c) = '0') else mem_i;
 
 

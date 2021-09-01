@@ -1159,17 +1159,18 @@ package neorv32_package is
     );
     port (
       -- global control --
-      clk_i  : in  std_ulogic; -- global clock, rising edge
-      ctrl_i : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
+      clk_i     : in  std_ulogic; -- global clock, rising edge
+      ctrl_i    : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
       -- data input --
-      mem_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
-      alu_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
+      mem_i     : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
+      alu_i     : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
+      alu_tag_i : in  std_ulogic_vector(3 downto 0); -- ALU result DIFT tag
       -- data output --
-      rs1_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
-      rs2_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
-      rs1_t_o: out std_ulogic_vector(3 downto 0); -- operand 1 tag bit
-      rs2_t_o: out std_ulogic_vector(3 downto 0); -- operand 2 tag bit
-      cmp_o  : out std_ulogic_vector(1 downto 0) -- comparator status
+      rs1_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
+      rs2_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
+      rs1_t_o   : out std_ulogic_vector(3 downto 0); -- operand 1 tag bit
+      rs2_t_o   : out std_ulogic_vector(3 downto 0); -- operand 2 tag bit
+      cmp_o     : out std_ulogic_vector(1 downto 0) -- comparator status
     );
   end component;
 

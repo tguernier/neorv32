@@ -250,8 +250,19 @@ begin
         dift_alu_res <= "0000";
     end case;
   end process dift_alu_core;
-
-  tag_o <= dift_alu_res;
+  
+  -- DIFT ALU Function Select --------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  dift_alu_function_mux: process(ctrl_i, dift_alu_res)
+  begin
+    case ctrl_i(ctrl_alu_func1_c downto ctrl_alu_func0_c) is
+      when alu_func_cmd_arith_c => tag_o <= dift_alu_res; -- (default)
+      when alu_func_cmd_logic_c => tag_o <= dift_alu_res;
+      when alu_func_cmd_csrr_c  => tag_o <= "0000"; -- TODO: maybe needs tag?
+      when alu_func_cmd_copro_c => tag_o <= "0000";
+      when others               => tag_o <= dift_alu_res; -- undefined
+    end case;
+  end process dift_alu_function_mux;
 
   -- **************************************************************************************************************************
   -- Co-Processors

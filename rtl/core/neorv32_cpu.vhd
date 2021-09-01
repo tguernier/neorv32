@@ -291,17 +291,18 @@ begin
   )
   port map (
     -- global control --
-    clk_i   => clk_i,              -- global clock, rising edge
-    ctrl_i  => ctrl,               -- main control bus
+    clk_i     => clk_i,              -- global clock, rising edge
+    ctrl_i    => ctrl,               -- main control bus
     -- data input --
-    mem_i   => mem_rdata,          -- memory read data
-    alu_i   => alu_res,            -- ALU result
+    mem_i     => mem_rdata,          -- memory read data
+    alu_i     => alu_res,            -- ALU result
+    alu_tag_i => tag_res,            -- ALU result tag
     -- data output --
-    rs1_o   => rs1,                -- operand 1
-    rs2_o   => rs2,                -- operand 2
-    rs1_t_o => rs1_t,              -- operand 1 tag bit
-    rs2_t_o => rs2_t,              -- operand 2 tag bit
-    cmp_o   => comparator          -- comparator status
+    rs1_o     => rs1,                -- operand 1
+    rs2_o     => rs2,                -- operand 2
+    rs1_t_o   => rs1_t,              -- operand 1 tag bit
+    rs2_t_o   => rs2_t,              -- operand 2 tag bit
+    cmp_o     => comparator          -- comparator status
   );
 
 
