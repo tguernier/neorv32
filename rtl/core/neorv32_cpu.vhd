@@ -157,6 +157,7 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal rs1_t      : std_ulogic_vector(3 downto 0); -- source register tag bits
   signal rs2_t      : std_ulogic_vector(3 downto 0);
   signal rs2_tagged : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- rs2 (register output to bus) with tag
+  signal tag_except : std_ulogic; -- DIFT tag exception (from tag check)
 
   -- pmp interface --
   signal pmp_addr : pmp_addr_if_t;
@@ -337,7 +338,7 @@ begin
     add_o       => alu_add,       -- address computation result
     fpu_flags_o => fpu_flags,     -- FPU exception flags
     -- dift output --
-    tag_o       => tag_res,       -- DIFT tag ALU result TODO: connect to tag check
+    tag_o       => tag_res,       -- DIFT tag ALU result
     -- status --
     idone_o     => alu_idone      -- iterative processing units done?
   );
@@ -404,6 +405,23 @@ begin
     d_bus_ack_i    => d_bus_ack_i,    -- bus transfer acknowledge
     d_bus_err_i    => d_bus_err_i,    -- bus transfer error
     d_bus_fence_o  => d_bus_fence_o   -- fence operation
+  );
+   
+  -- DIFT tag check ----------------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  dift_tag_check_inst: dift_tag_check
+  port map (
+    -- global control --
+    clk_i         => clk_i,         -- global clock, rising edge
+    rstn_i        => rstn_i,        -- global reset, low-active, async
+    ctrl_i        => ctrl,          -- main control bus
+    -- data input --
+    rs1_tag_i     => rs1_t,         -- rf source 1 tag
+    rs2_tag_i     => rs2_t,         -- rf source 2 tag
+    alu_tag_i     => tag_res,       -- alu result tag
+    pc_tag_i      => '0',           -- TODO: add PC dift tag
+    -- data output
+    tag_except_o  => tag_except     -- DIFT tag exception
   );
 
   -- current privilege level --

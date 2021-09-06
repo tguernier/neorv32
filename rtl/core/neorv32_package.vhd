@@ -358,8 +358,12 @@ package neorv32_package is
   -- DIFT control --
   constant ctrl_dift_alu_lsb_c  : natural := 76; -- DIFT ALU control input LSB
   constant ctrl_dift_alu_msb_c  : natural := 77; -- DIFT ALU control input MSB
+  constant ctrl_dift_chk_0_c    : natural := 78; -- DIFT tag check control bit 0
+  constant ctrl_dift_chk_1_c    : natural := 79; -- DIFT tag check control bit 1
+  constant ctrl_dift_chk_2_c    : natural := 80; -- DIFT tag check control bit 2
+  constant ctrl_dift_chk_3_c    : natural := 81; -- DIFT tag check control bit 3
   -- control bus size --
-  constant ctrl_width_c         : natural := 78; -- control bus size
+  constant ctrl_width_c         : natural := 82; -- control bus size
 
   -- Comparator Bus -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -1913,31 +1917,13 @@ package neorv32_package is
   end component;
 
   -- DIFT Components ---------------------------------------------------------------------------
-  
-  -- Component: DIFT ALU ----------------------------------------------------------------------
-  -- ------------------------------------------------------------------------------------------
-  component dift_alu
-    port (
-      -- globals --
-      clk_i       : in std_ulogic;
-      rstn_i      : in std_ulogic;
-      dift_ctrl_i : in std_ulogic_vector(1 downto 0); -- test control input (TODO: add to control bus)
-      -- ctrl_i      : in std_ulogic_vector(ctrl_width-1 downto 0); -- cpu control bus
-      -- data input --
-      rs1_tag_i   : in std_ulogic_vector(3 downto 0); -- rf source 1 dift tag
-      rs2_tag_i   : in std_ulogic_vector(3 downto 0); -- rf source 2 dift tag
-      -- data output  --
-      res_o       : out std_ulogic_vector(3 downto 0) -- ALU result
-    );
-  end component;
 
   component dift_tag_check
     port (
       -- globals --
       clk_i         : in std_ulogic;
       rstn_i        : in std_ulogic;
-      dift_ctrl_i   : in std_ulogic_vector(3 downto 0); -- test control input (TODO: add to control bus)
-      -- ctrl_i     : in std_ulogic_vector(ctrl_width-1 downto 0); -- cpu control bus
+      ctrl_i        : in std_ulogic_vector(ctrl_width_c-1 downto 0); -- cpu control bus
       -- data input --
       rs1_tag_i     : in std_ulogic_vector(3 downto 0); -- rf source 1 dift tag
       rs2_tag_i     : in std_ulogic_vector(3 downto 0); -- rf source 2 dift tag
