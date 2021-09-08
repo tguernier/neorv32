@@ -506,6 +506,38 @@ package neorv32_package is
   constant fp_single_pos_zero_c : std_ulogic_vector(31 downto 0) := x"00000000"; -- positive zero
   constant fp_single_neg_zero_c : std_ulogic_vector(31 downto 0) := x"80000000"; -- negative zero
 
+  -- DIFT CSRs --
+  ------------------------------------------------------------------------------------------
+  -- tag propagation --
+  constant dift_prop_alu_lsb_c     : natural := 0;
+  constant dift_prop_alu_msb_c     : natural := 1;
+  constant dift_prop_branch_lsb_c  : natural := 2;
+  constant dift_prop_branch_msb_c  : natural := 3;
+  constant dift_prop_jump_lsb_c    : natural := 4;
+  constant dift_prop_jump_msb_c    : natural := 5;
+  constant dift_prop_comp_lsb_c    : natural := 6;
+  constant dift_prop_comp_msb_c    : natural := 7;
+  constant dift_prop_load_lsb_c    : natural := 8;
+  constant dift_prop_load_msb_c    : natural := 9;
+
+  -- tag check --
+  constant dift_chk_alu_0_c     : natural := 0;
+  constant dift_chk_alu_1_c     : natural := 1;
+  constant dift_chk_alu_2_c     : natural := 2;
+  constant dift_chk_branch_0_c  : natural := 3;
+  constant dift_chk_branch_1_c  : natural := 4;
+  constant dift_chk_branch_2_c  : natural := 5;
+  constant dift_chk_jump_0_c    : natural := 6;
+  constant dift_chk_jump_1_c    : natural := 7;
+  constant dift_chk_jump_2_c    : natural := 8;
+  constant dift_chk_comp_0_c    : natural := 9;
+  constant dift_chk_comp_1_c    : natural := 10;
+  constant dift_chk_comp_2_c    : natural := 11;
+  constant dift_chk_load_0_c    : natural := 12;
+  constant dift_chk_load_1_c    : natural := 13;
+  constant dift_chk_load_2_c    : natural := 14;
+  constant dift_chk_pc_c        : natural := 15;
+
   -- RISC-V CSR Addresses -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- <<< standard read/write CSRs >>> --
@@ -643,6 +675,10 @@ package neorv32_package is
   constant csr_pmpaddr61_c      : std_ulogic_vector(11 downto 0) := x"3ed";
   constant csr_pmpaddr62_c      : std_ulogic_vector(11 downto 0) := x"3ee";
   constant csr_pmpaddr63_c      : std_ulogic_vector(11 downto 0) := x"3ef";
+  -- DIFT registers --
+  constant csr_class_dift_c     : std_ulogic_vector(10 downto 0) := x"70" & "000";
+  constant csr_dift_prop_c      : std_ulogic_vector(11 downto 0) := x"700";
+  constant csr_dift_chk_c       : std_ulogic_vector(11 downto 0) := x"701";
   -- debug mode registers --
   constant csr_class_debug_c    : std_ulogic_vector(09 downto 0) := x"7b" & "00"; -- debug registers
   constant csr_dcsr_c           : std_ulogic_vector(11 downto 0) := x"7b0";

@@ -343,6 +343,9 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     dcsr_rd           : std_ulogic_vector(data_width_c-1 downto 0); -- dcsr (R/(W)): debug mode control and status register
     dpc               : std_ulogic_vector(data_width_c-1 downto 0); -- dpc (R/W): debug mode program counter
     dscratch0         : std_ulogic_vector(data_width_c-1 downto 0); -- dscratch0 (R/W): debug mode scratch register 0
+    --
+    dift_tag_prop     : std_ulogic_vector(data_width_c-1 downto 0); -- dift tag propagation control register
+    dift_tag_chk      : std_ulogic_vector(data_width_c-1 downto 0); -- dift tag check control register
   end record;
   signal csr : csr_t;
 
@@ -829,8 +832,8 @@ begin
     -- FPU rounding mode --
     ctrl_o(ctrl_alu_frm2_c downto ctrl_alu_frm0_c) <= csr.frm;
     -- DIFT control
-    ctrl_o(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= "10"; -- TODO: add control logic
-    ctrl_o(ctrl_dift_chk_3_c downto ctrl_dift_chk_0_c) <= "1111";
+    -- ctrl_o(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= "10";
+    -- ctrl_o(ctrl_dift_chk_3_c downto ctrl_dift_chk_0_c) <= "1111";
   end process ctrl_output;
 
 
@@ -931,6 +934,7 @@ begin
     else
       ctrl_nxt(ctrl_bus_ch_lock_c) <= '0';
     end if;
+    ctrl_nxt(ctrl_dift_chk_3_c) <= '0'; -- TODO: add PC tag
 
 
     -- state machine --
@@ -1008,8 +1012,12 @@ begin
             if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_slt_c) or
                (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sltu_c) then
               ctrl_nxt(ctrl_alu_arith_c) <= alu_arith_cmd_slt_c;
+              ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_prop(dift_prop_comp_msb_c downto dift_prop_comp_lsb_c); -- comparison              
+              ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_load_2_c downto dift_chk_load_0_c);            
             else
               ctrl_nxt(ctrl_alu_arith_c) <= alu_arith_cmd_addsub_c;
+              ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_chk(dift_prop_alu_msb_c downto dift_prop_alu_lsb_c); -- ALU operation              
+              ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_alu_2_c downto dift_chk_alu_0_c);             
             end if;
 
             -- ADD/SUB --
@@ -1068,6 +1076,8 @@ begin
             end if;
             ctrl_nxt(ctrl_rf_in_mux_c) <= '0'; -- RF input = ALU result
             ctrl_nxt(ctrl_rf_wb_en_c)  <= '1'; -- valid RF write-back
+            ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_prop(dift_prop_load_msb_c downto dift_prop_load_lsb_c); -- load/store             
+            ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_load_2_c downto dift_chk_load_0_c);             
             execute_engine.state_nxt   <= DISPATCH;
 
           when opcode_load_c | opcode_store_c | opcode_atomic_c => -- load/store / atomic memory access
@@ -1075,6 +1085,8 @@ begin
             ctrl_nxt(ctrl_alu_opa_mux_c)<= '0'; -- use RS1 as ALU.OPA
             ctrl_nxt(ctrl_alu_opb_mux_c)<= '1'; -- use IMM as ALU.OPB
             ctrl_nxt(ctrl_bus_mo_we_c)  <= '1'; -- write to MAR and MDO (MDO only relevant for store)
+            ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_prop(dift_prop_load_msb_c downto dift_prop_load_lsb_c); -- also load/store             
+            ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_load_2_c downto dift_chk_load_0_c);             
             --
             if (CPU_EXTENSION_RISCV_A = false) or -- atomic extension disabled
                (execute_engine.i_reg(instr_opcode_lsb_c+3 downto instr_opcode_lsb_c+2) = "00") then  -- normal integer load/store
@@ -1097,11 +1109,20 @@ begin
               ctrl_nxt(ctrl_alu_opa_mux_c) <= '1'; -- use PC as ALU.OPA (branch target address base)
             end if;
             ctrl_nxt(ctrl_alu_opb_mux_c) <= '1'; -- use IMM as ALU.OPB (branch target address offset)
+            if (execute_engine.i_reg(instr_opcode_lsb_c+3 downto instr_opcode_lsb_c+2) = opcode_branch_c(3 downto 2)) then -- branch
+              ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_prop(dift_prop_branch_msb_c downto dift_prop_branch_lsb_c); -- branch             
+              ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_branch_2_c downto dift_chk_branch_0_c);             
+            else -- JAL/JALR
+              ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_prop(dift_prop_jump_msb_c downto dift_prop_jump_lsb_c); -- jump             
+              ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_jump_2_c downto dift_chk_jump_0_c);             
+            end if; 
             execute_engine.state_nxt     <= BRANCH;
 
           when opcode_fence_c => -- fence operations
           -- ------------------------------------------------------------
             execute_engine.state_nxt <= FENCE_OP;
+            ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= "00"; -- TODO: should have operation?             
+            ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= "000";             
 
           when opcode_syscsr_c => -- system/csr access
           -- ------------------------------------------------------------
@@ -1115,6 +1136,8 @@ begin
             else
               execute_engine.state_nxt <= SYS_WAIT;
             end if;
+            ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= "00"; -- TODO: should have operation?           
+            ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= "000";             
 
           when opcode_fop_c => -- floating-point operations
           -- ------------------------------------------------------------
@@ -1329,6 +1352,10 @@ begin
         else
           NULL;
         end if;
+
+      -- DIFT CSRs
+      when csr_dift_prop_c | csr_dift_chk_c =>
+        csr_acc_valid <= csr.priv_m_mode; -- Machine mode only
 
       -- hardware performance monitors (HPM) --
       when csr_mhpmcounter3_c   | csr_mhpmcounter4_c   | csr_mhpmcounter5_c   | csr_mhpmcounter6_c   | csr_mhpmcounter7_c   | csr_mhpmcounter8_c   | -- counter LOW
@@ -1974,6 +2001,9 @@ begin
       csr.dcsr_cause   <= (others => def_rst_val_c);
       csr.dpc          <= (others => def_rst_val_c);
       csr.dscratch0    <= (others => def_rst_val_c);
+      --
+      csr.dift_tag_prop <= (others => def_rst_val_c);
+      csr.dift_tag_chk  <= (others => def_rst_val_c);
 
     elsif rising_edge(clk_i) then
       -- write access? --
@@ -2109,6 +2139,19 @@ begin
                 end if;
                 csr.mhpmevent(i)(hpmcnt_event_never_c) <= '0'; -- would be used for "TIME"
               end loop; -- i (CSRs)
+            end if;
+          end if;
+
+          -- DIFT CSRs --
+          ----------------------------------------------------------------------
+          if (csr.addr(11 downto 1) = csr_class_dift_c) then
+            -- tag check control register
+            if (csr.addr(0) = csr_dift_prop_c(0)) then
+              csr.dift_tag_prop <= csr.wdata;
+            end if;
+            -- tag propagation control register
+            if (csr.addr(0) = csr_dift_chk_c(0)) then
+              csr.dift_tag_chk <= csr.wdata;
             end if;
           end if;
 
@@ -2653,6 +2696,13 @@ begin
           when csr_pmpaddr61_c => if (PMP_NUM_REGIONS > 61) then csr.rdata <= csr.pmpaddr(61); else NULL; end if; -- R/W: pmpaddr61
           when csr_pmpaddr62_c => if (PMP_NUM_REGIONS > 62) then csr.rdata <= csr.pmpaddr(62); else NULL; end if; -- R/W: pmpaddr62
           when csr_pmpaddr63_c => if (PMP_NUM_REGIONS > 63) then csr.rdata <= csr.pmpaddr(63); else NULL; end if; -- R/W: pmpaddr63
+          
+          -- DIFT CSRs --
+          ----------------------------------------------------------------------
+          when csr_dift_prop_c =>
+            csr.rdata <= csr.dift_tag_prop;
+          when csr_dift_chk_c =>
+            csr.rdata <= csr.dift_tag_chk;
 
           -- machine counter setup --
           -- --------------------------------------------------------------------
