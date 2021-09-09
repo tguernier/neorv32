@@ -76,6 +76,9 @@ __crt0_cpu_csr_init:
   li   x11,   ~5                        // stop all counters except for [m]cycle[h] and [m]instret[h]
   csrw 0x320, x11                       // = mcountinhibit (literal address for lagacy toolchain compatibility)
 
+  csrw 0x700,     zero                  // initialise tag propagation CSR
+  csrw 0x701,     zero                  // initialise tag check CSR
+
   csrw mcycle,    zero                  // reset cycle counters
   csrw mcycleh,   zero
   csrw minstret,  zero                  // reset instruction counters
