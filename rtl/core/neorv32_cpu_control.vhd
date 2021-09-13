@@ -728,6 +728,7 @@ begin
       --
       ctrl(ctrl_bus_rd_c)       <= '0';
       ctrl(ctrl_bus_wr_c)       <= '0';
+      ctrl(ctrl_bus_settag_c)   <= '0';
     elsif rising_edge(clk_i) then
       -- PC update --
       if (execute_engine.pc_we = '1') then
@@ -1259,6 +1260,11 @@ begin
               ctrl_nxt(ctrl_bus_wr_c) <= '1'; -- write request
             end if;
           else
+            if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_settag_c) then -- if settag instruction
+              ctrl_nxt(ctrl_bus_settag_c) <= '1'; -- set tag request
+            else
+              ctrl_nxt(ctrl_bus_settag_c) <= '0';
+            end if;
             ctrl_nxt(ctrl_bus_wr_c) <= '1'; -- (normal) write request
           end if;
         end if;
@@ -1507,7 +1513,8 @@ begin
         -- ------------------------------------------------------------
           if (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sb_c) or
              (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sh_c) or
-             (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sw_c) then
+             (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_sw_c) or
+             (execute_engine.i_reg(instr_funct3_msb_c downto instr_funct3_lsb_c) = funct3_settag_c) then
             illegal_instruction <= '0';
           else
             illegal_instruction <= '1';

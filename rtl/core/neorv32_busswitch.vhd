@@ -61,6 +61,7 @@ entity neorv32_busswitch is
     ca_bus_lock_i   : in  std_ulogic; -- exclusive access request
     ca_bus_ack_o    : out std_ulogic; -- bus transfer acknowledge
     ca_bus_err_o    : out std_ulogic; -- bus transfer error
+    ca_bus_settag_i : in std_ulogic;  -- set tag control
     -- controller interface b --
     cb_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
     cb_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data (for instructions)
@@ -81,7 +82,8 @@ entity neorv32_busswitch is
     p_bus_re_o      : out std_ulogic; -- read enable
     p_bus_lock_o    : out std_ulogic; -- exclusive access request
     p_bus_ack_i     : in  std_ulogic; -- bus transfer acknowledge
-    p_bus_err_i     : in  std_ulogic  -- bus transfer error
+    p_bus_err_i     : in  std_ulogic; -- bus transfer error
+    p_bus_settag_o  : out std_ulogic  -- set tag control
   );
 end neorv32_busswitch;
 
@@ -258,6 +260,7 @@ begin
   p_bus_we_o     <= (p_bus_we or arbiter.we_trig);
   p_bus_re_o     <= (p_bus_re or arbiter.re_trig);
   p_bus_lock_o   <= ca_bus_lock_i or cb_bus_lock_i;
+  p_bus_settag_o <= ca_bus_settag_i;
 
   ca_bus_rdata_o <= p_bus_rdata_i;
   cb_bus_rdata_o <= p_bus_rdata_i;

@@ -239,6 +239,7 @@ architecture neorv32_top_rtl of neorv32_top is
     ack    : std_ulogic; -- bus transfer acknowledge
     err    : std_ulogic; -- bus transfer error
     fence  : std_ulogic; -- fence(i) instruction executed
+    settag : std_ulogic; -- set tag operation
     priv   : std_ulogic_vector(1 downto 0); -- current privilege level
     src    : std_ulogic; -- access source (1=instruction fetch, 0=data access)
     lock   : std_ulogic; -- exclusive access request
@@ -457,6 +458,7 @@ begin
     d_bus_ack_i    => cpu_d.ack,    -- bus transfer acknowledge
     d_bus_err_i    => cpu_d.err,    -- bus transfer error
     d_bus_fence_o  => cpu_d.fence,  -- executed FENCE operation
+    d_bus_settag_o => cpu_d.settag, -- set tag operation
     d_bus_priv_o   => cpu_d.priv,   -- privilege level
     -- system time input from MTIME --
     time_i         => mtime_time,   -- current system time
@@ -476,6 +478,7 @@ begin
   -- misc --
   cpu_i.src <= '1'; -- initialized but unused
   cpu_d.src <= '0'; -- initialized but unused
+  cpu_i.settag <= '0'; -- no tag for instruction memory
 
   -- advanced memory control --
   fence_o  <= cpu_d.fence; -- indicates an executed FENCE operation
@@ -584,6 +587,7 @@ begin
     ca_bus_lock_i   => cpu_d.lock,     -- exclusive access request
     ca_bus_ack_o    => cpu_d.ack,      -- bus transfer acknowledge
     ca_bus_err_o    => cpu_d.err,      -- bus transfer error
+    ca_bus_settag_i => cpu_d.settag,   -- set tag control
     -- controller interface b --
     cb_bus_addr_i   => i_cache.addr,   -- bus access address
     cb_bus_rdata_o  => i_cache.rdata,  -- bus read data
@@ -604,7 +608,8 @@ begin
     p_bus_re_o      => p_bus.re,       -- read enable
     p_bus_lock_o    => p_bus.lock,     -- exclusive access request
     p_bus_ack_i     => p_bus.ack,      -- bus transfer acknowledge
-    p_bus_err_i     => p_bus.err       -- bus transfer error
+    p_bus_err_i     => p_bus.err,      -- bus transfer error
+    p_bus_settag_o  => p_bus.settag    -- set tag control
   );
 
   -- current CPU privilege level --
@@ -701,6 +706,7 @@ begin
       clk_i       => clk_i,                     -- global clock line
       rden_i      => p_bus.re,                  -- read enable
       wren_i      => p_bus.we,                  -- write enable
+      settag_i    => p_bus.settag,              -- set tag control
       ben_i       => p_bus.ben,                 -- byte write enable
       addr_i      => p_bus.addr,                -- address
       data_i      => p_bus.wdata,               -- data in

@@ -46,8 +46,8 @@ APP_INC ?= -I .
 # User's application include folders - for assembly files only (don't forget the '-I' before each entry)
 ASM_INC ?= -I .
 
-# Optimization
-EFFORT ?= -Os
+# Optimization - MUST USE -O0 FOR DIFT CODE!
+EFFORT ?= -O0
 
 # Compiler toolchain
 RISCV_TOOLCHAIN ?= riscv32-unknown-elf

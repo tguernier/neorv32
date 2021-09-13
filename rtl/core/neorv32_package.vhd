@@ -362,8 +362,9 @@ package neorv32_package is
   constant ctrl_dift_chk_1_c    : natural := 79; -- DIFT tag check control bit 1
   constant ctrl_dift_chk_2_c    : natural := 80; -- DIFT tag check control bit 2
   constant ctrl_dift_chk_3_c    : natural := 81; -- DIFT tag check control bit 3
+  constant ctrl_bus_settag_c    : natural := 82; -- DIFT set tag memory control bit
   -- control bus size --
-  constant ctrl_width_c         : natural := 82; -- control bus size
+  constant ctrl_width_c         : natural := 83; -- control bus size
 
   -- Comparator Bus -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -435,6 +436,7 @@ package neorv32_package is
   constant funct3_sb_c     : std_ulogic_vector(2 downto 0) := "000"; -- store byte
   constant funct3_sh_c     : std_ulogic_vector(2 downto 0) := "001"; -- store half word
   constant funct3_sw_c     : std_ulogic_vector(2 downto 0) := "010"; -- store word
+  constant funct3_settag_c : std_ulogic_vector(2 downto 0) := "101"; -- set tag (DIFT only)
   -- alu --
   constant funct3_subadd_c : std_ulogic_vector(2 downto 0) := "000"; -- sub/add via funct7
   constant funct3_sll_c    : std_ulogic_vector(2 downto 0) := "001"; -- shift logical left
@@ -1098,6 +1100,7 @@ package neorv32_package is
       d_bus_ack_i    : in  std_ulogic := '0'; -- bus transfer acknowledge
       d_bus_err_i    : in  std_ulogic := '0'; -- bus transfer error
       d_bus_fence_o  : out std_ulogic; -- executed FENCE operation
+      d_bus_settag_o : out std_ulogic; -- set tag control
       d_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
       -- system time input from MTIME --
       time_i         : in  std_ulogic_vector(63 downto 0) := (others => '0'); -- current system time
@@ -1372,7 +1375,8 @@ package neorv32_package is
       d_bus_lock_o   : out std_ulogic; -- exclusive access request
       d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
       d_bus_err_i    : in  std_ulogic; -- bus transfer error
-      d_bus_fence_o  : out std_ulogic  -- fence operation
+      d_bus_fence_o  : out std_ulogic; -- fence operation
+      d_bus_settag_o : out std_ulogic
     );
   end component;
 
@@ -1457,6 +1461,7 @@ package neorv32_package is
       ca_bus_lock_i   : in  std_ulogic; -- exclusive access request
       ca_bus_ack_o    : out std_ulogic; -- bus transfer acknowledge
       ca_bus_err_o    : out std_ulogic; -- bus transfer error
+      ca_bus_settag_i : in std_ulogic;  -- set tag control
       -- controller interface b --
       cb_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
       cb_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
@@ -1477,7 +1482,8 @@ package neorv32_package is
       p_bus_re_o      : out std_ulogic; -- read enable
       p_bus_lock_o    : out std_ulogic; -- exclusive access request
       p_bus_ack_i     : in  std_ulogic; -- bus transfer acknowledge
-      p_bus_err_i     : in  std_ulogic  -- bus transfer error
+      p_bus_err_i     : in  std_ulogic; -- bus transfer error
+      p_bus_settag_o  : out std_ulogic  -- set tag control
     );
   end component;
 
@@ -1521,14 +1527,15 @@ package neorv32_package is
       DMEM_SIZE : natural := 4*1024  -- processor-internal instruction memory size in bytes
     );
     port (
-      clk_i  : in  std_ulogic; -- global clock line
-      rden_i : in  std_ulogic; -- read enable
-      wren_i : in  std_ulogic; -- write enable
-      ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
-      addr_i : in  std_ulogic_vector(31 downto 0); -- address
-      data_i : in  std_ulogic_vector(35 downto 0); -- data in
-      data_o : out std_ulogic_vector(35 downto 0); -- data out
-      ack_o  : out std_ulogic -- transfer acknowledge
+      clk_i    : in  std_ulogic; -- global clock line
+      rden_i   : in  std_ulogic; -- read enable
+      wren_i   : in  std_ulogic; -- write enable
+      settag_i : in  std_ulogic; -- set tag control
+      ben_i    : in  std_ulogic_vector(03 downto 0); -- byte write enable
+      addr_i   : in  std_ulogic_vector(31 downto 0); -- address
+      data_i   : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o   : out std_ulogic_vector(35 downto 0); -- data out
+      ack_o    : out std_ulogic -- transfer acknowledge
     );
   end component;
 

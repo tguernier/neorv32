@@ -108,6 +108,7 @@ entity neorv32_cpu is
     d_bus_ack_i    : in  std_ulogic := '0'; -- bus transfer acknowledge
     d_bus_err_i    : in  std_ulogic := '0'; -- bus transfer error
     d_bus_fence_o  : out std_ulogic; -- executed FENCE operation
+    d_bus_settag_o : out std_ulogic; -- set tag operation
     d_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
     -- system time input from MTIME --
     time_i         : in  std_ulogic_vector(63 downto 0) := (others => '0'); -- current system time
@@ -404,7 +405,8 @@ begin
     d_bus_lock_o   => d_bus_lock_o,   -- exclusive access request
     d_bus_ack_i    => d_bus_ack_i,    -- bus transfer acknowledge
     d_bus_err_i    => d_bus_err_i,    -- bus transfer error
-    d_bus_fence_o  => d_bus_fence_o   -- fence operation
+    d_bus_fence_o  => d_bus_fence_o,  -- fence operation
+    d_bus_settag_o => d_bus_settag_o  -- set tag operation
   );
    
   -- DIFT tag check ----------------------------------------------------------------------------

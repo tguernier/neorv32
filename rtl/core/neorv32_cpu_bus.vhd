@@ -99,7 +99,8 @@ entity neorv32_cpu_bus is
     d_bus_lock_o   : out std_ulogic; -- exclusive access request
     d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
     d_bus_err_i    : in  std_ulogic; -- bus transfer error
-    d_bus_fence_o  : out std_ulogic  -- fence operation
+    d_bus_fence_o  : out std_ulogic; -- fence operation
+    d_bus_settag_o : out std_ulogic  -- settag control signal
   );
 end neorv32_cpu_bus;
 
@@ -374,6 +375,7 @@ begin
   d_bus_we_o    <= d_bus_we_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_we;
   d_bus_re_o    <= d_bus_re_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_re;
   d_bus_fence_o <= ctrl_i(ctrl_bus_fence_c);
+  d_bus_settag_o <= ctrl_i(ctrl_bus_settag_c);
   d_bus_rdata   <= d_bus_rdata_i;
 
   -- additional register stage for control signals if using PMP_NUM_REGIONS > pmp_num_regions_critical_c --
