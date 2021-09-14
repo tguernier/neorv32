@@ -1017,7 +1017,7 @@ begin
               ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_load_2_c downto dift_chk_load_0_c);            
             else
               ctrl_nxt(ctrl_alu_arith_c) <= alu_arith_cmd_addsub_c;
-              ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_chk(dift_prop_alu_msb_c downto dift_prop_alu_lsb_c); -- ALU operation              
+              ctrl_nxt(ctrl_dift_alu_msb_c downto ctrl_dift_alu_lsb_c) <= csr.dift_tag_prop(dift_prop_alu_msb_c downto dift_prop_alu_lsb_c); -- ALU operation              
               ctrl_nxt(ctrl_dift_chk_2_c downto ctrl_dift_chk_0_c) <= csr.dift_tag_chk(dift_chk_alu_2_c downto dift_chk_alu_0_c);             
             end if;
 
