@@ -9,7 +9,7 @@
 int main() {
   // init DIFT tag propagation and check registers
   neorv32_cpu_csr_write(CSR_DIFTPROP , 0x00000222);
-  neorv32_cpu_csr_write(CSR_DIFTCHK , 0x0000d600);
+  neorv32_cpu_csr_write(CSR_DIFTCHK , 0x00009000);
   
   int value = 1;
   int* address = &value;

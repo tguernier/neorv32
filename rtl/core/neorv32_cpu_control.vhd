@@ -935,7 +935,7 @@ begin
     else
       ctrl_nxt(ctrl_bus_ch_lock_c) <= '0';
     end if;
-    ctrl_nxt(ctrl_dift_chk_3_c) <= '0'; -- TODO: add PC tag
+    ctrl_nxt(ctrl_dift_chk_3_c) <= '1'; -- TODO: add PC tag
 
 
     -- state machine --

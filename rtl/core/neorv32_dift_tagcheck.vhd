@@ -28,10 +28,10 @@ architecture dift_tag_check_rtl of dift_tag_check is
   signal rs2_reduced  : std_ulogic; -- or-reduced rs2_tag
   signal alu_reduced  : std_ulogic; -- or-reduced alu tag
 begin
--- dift_ctrl(0) == 1 -> check rs1_tag
--- dift_ctrl(1) == 1 -> check rs2_tag
--- dift_ctrl(2) == 1 -> check alu_tag
--- dift_ctrl(3) == 1 -> check pc_tag
+-- dift_ctrl(3) == 1 -> check rs1_tag (bit 81)
+-- dift_ctrl(2) == 1 -> check rs2_tag (bit 80)
+-- dift_ctrl(1) == 1 -> check alu_tag (bit 79)
+-- dift_ctrl(0) == 1 -> check pc_tag  (bit 78)
 
   dift_tag_check_core: process(ctrl_i, rs1_tag_i, rs2_tag_i, alu_tag_i, pc_tag_i)
   begin
