@@ -5,6 +5,14 @@
 [![Processor](https://img.shields.io/github/workflow/status/stnolting/neorv32/Processor/master?longCache=true&style=flat-square&label=Processor&logo=Github%20Actions&logoColor=fff)](https://github.com/stnolting/neorv32/actions?query=workflow%3AProcessor)
 [![Implementation](https://img.shields.io/github/workflow/status/stnolting/neorv32/Implementation/master?longCache=true&style=flat-square&label=Implementation&logo=Github%20Actions&logoColor=fff)](https://github.com/stnolting/neorv32/actions?query=workflow%3AImplementation)
 [![Windows](https://img.shields.io/github/workflow/status/stnolting/neorv32/Windows/master?longCache=true&style=flat-square&label=Windows&logo=Github%20Actions&logoColor=fff)](https://github.com/stnolting/neorv32/actions?query=workflow%3AWindows)
+This is a project to add Dynamic Information Flow Tracking (DIFT) capabilities to the neorv32 RISC-V processor, done as an undergraduate Part 4 project for the University of Auckland.
+
+Guide to Branches:
+* master: Upstream master branch
+* de1-soc: Exemplar setup of the unmodified processor for the Terasic DE1-SoC board, modified from the neorv32_ProcessorTop_Test.vhd template. This implements the base ISA and the Zicsr and U extensions.
+* dift-develop: development branch for project
+
+# Original Readme
 
 [![NEORV32](https://raw.githubusercontent.com/stnolting/neorv32/master/docs/figures/neorv32_logo_dark.png)](https://github.com/stnolting/neorv32)
 
