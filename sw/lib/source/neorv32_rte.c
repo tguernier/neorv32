@@ -45,7 +45,7 @@
 /**********************************************************************//**
  * The >private< trap vector look-up table of the NEORV32 RTE.
  **************************************************************************/
-static uint32_t __neorv32_rte_vector_lut[29] __attribute__((unused)); // trap handler vector table
+static uint32_t __neorv32_rte_vector_lut[NEORV32_RTE_NUM_TRAPS] __attribute__((unused)); // trap handler vector table
 
 // private functions
 static void __attribute__((__interrupt__)) __neorv32_rte_core(void) __attribute__((aligned(16))) __attribute__((unused));
@@ -62,11 +62,6 @@ static void __neorv32_rte_print_hex_word(uint32_t num);
  * via neorv32_rte_exception_install(uint8_t id, void (*handler)(void)).
  **************************************************************************/
 void neorv32_rte_setup(void) {
-
-  // check if CSR system is available at all
-  if (neorv32_cpu_csr_read(CSR_MISA) == 0) {
-    neorv32_uart_print("<RTE> WARNING! CPU CSR system not available! </RTE>");
-  }
 
   // configure trap handler base address
   uint32_t mtvec_base = (uint32_t)(&__neorv32_rte_core);
@@ -137,7 +132,7 @@ static void __attribute__((__interrupt__)) __attribute__((aligned(16)))  __neorv
   register uint32_t rte_mcause = neorv32_cpu_csr_read(CSR_MCAUSE);
 
   // compute return address
-  if ((rte_mcause & 0x80000000) == 0) { // modify pc only if exception
+  if (((int32_t)rte_mcause) >= 0) { // modify pc only if exception (MSB cleared)
 
     // get low half word of faulting instruction
     register uint32_t rte_trap_inst;
@@ -167,6 +162,7 @@ static void __attribute__((__interrupt__)) __attribute__((aligned(16)))  __neorv
     case TRAP_CODE_S_ACCESS:     rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_S_ACCESS]; break;
     case TRAP_CODE_UENV_CALL:    rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_UENV_CALL]; break;
     case TRAP_CODE_MENV_CALL:    rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MENV_CALL]; break;
+    case TRAP_CODE_NMI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_NMI]; break;
     case TRAP_CODE_MSI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MSI]; break;
     case TRAP_CODE_MTI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MTI]; break;
     case TRAP_CODE_MEI:          rte_handler = __neorv32_rte_vector_lut[RTE_TRAP_MEI]; break;
@@ -201,6 +197,10 @@ static void __attribute__((__interrupt__)) __attribute__((aligned(16)))  __neorv
  * @note This function is used by neorv32_rte_exception_uninstall(void) only.
  **************************************************************************/
 static void __neorv32_rte_debug_exc_handler(void) {
+
+  if (neorv32_uart0_available() == 0) {
+    return; // handler cannot output anything if UART0 is not implemented
+  }
 
   char tmp;
 
@@ -265,6 +265,10 @@ static void __neorv32_rte_debug_exc_handler(void) {
  **************************************************************************/
 void neorv32_rte_print_hw_config(void) {
 
+  if (neorv32_uart0_available() == 0) {
+    return; // cannot output anything if UART0 is not implemented
+  }
+
   uint32_t tmp;
   int i;
   char c;
@@ -272,136 +276,133 @@ void neorv32_rte_print_hw_config(void) {
   neorv32_uart_printf("\n\n<<< Processor Configuration Overview >>>\n");
 
   // Processor - general stuff
-  neorv32_uart_printf("\n=== << General >> ===\n");
-  neorv32_uart_printf("Clock:   %u Hz\n", SYSINFO_CLK);
-  neorv32_uart_printf("User ID: 0x%x\n", SYSINFO_USER_CODE);
+  neorv32_uart0_printf("\n=== << General >> ===\n"
+                       "Clock speed:   %u Hz\n", SYSINFO_CLK);
+  neorv32_uart0_printf("Full HW reset: "); __neorv32_rte_print_true_false(SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_HW_RESET));
+  neorv32_uart0_printf("Boot Config.:  Boot ");
+  if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_BOOTLOADER)) {
+    neorv32_uart0_printf("via Bootloader\n");
+  }
+  else {
+    neorv32_uart0_printf("from memory (@ 0x%x)\n", SYSINFO_ISPACE_BASE);
+  }
+  neorv32_uart0_printf("On-chip debug: "); __neorv32_rte_print_true_false(SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_OCD));
 
 
   // CPU configuration
-  neorv32_uart_printf("\n=== << CPU >> ===\n");
+  neorv32_uart0_printf("\n=== << CPU >> ===\n");
 
   // ID
-  neorv32_uart_printf("Hart ID:           0x%x\n", neorv32_cpu_csr_read(CSR_MHARTID));
-  neorv32_uart_printf("Vendor ID:         0x%x\n", neorv32_cpu_csr_read(CSR_MVENDORID));
+  neorv32_uart0_printf("Hart ID:           0x%x\n"
+                       "Vendor ID:         0x%x\n", neorv32_cpu_csr_read(CSR_MHARTID), neorv32_cpu_csr_read(CSR_MVENDORID));
 
   tmp = neorv32_cpu_csr_read(CSR_MARCHID);
-  neorv32_uart_printf("Architecture ID:   0x%x", tmp);
+  neorv32_uart0_printf("Architecture ID:   0x%x", tmp);
   if (tmp == NEORV32_ARCHID) {
-    neorv32_uart_printf(" (NEORV32)");
+    neorv32_uart0_printf(" (NEORV32)");
   }
 
   // hardware version
-  neorv32_uart_printf("\nImplementation ID: 0x%x (", neorv32_cpu_csr_read(CSR_MIMPID));
+  neorv32_uart0_printf("\nImplementation ID: 0x%x (", neorv32_cpu_csr_read(CSR_MIMPID));
   neorv32_rte_print_hw_version();
-  neorv32_uart_printf(")\n");
+  neorv32_uart0_putc(')');
 
-  // CPU architecture
-  neorv32_uart_printf("Architecture:      ");
+  // CPU architecture and endianness
+  neorv32_uart0_printf("\nArchitecture:      ");
   tmp = neorv32_cpu_csr_read(CSR_MISA);
   tmp = (tmp >> 30) & 0x03;
-  if (tmp == 0) {
-    neorv32_uart_printf("unknown");
-  }
   if (tmp == 1) {
-    neorv32_uart_printf("rv32");
-  }
-  if (tmp == 2) {
-    neorv32_uart_printf("rv64");
-  }
-  if (tmp == 3) {
-    neorv32_uart_printf("rv128");
-  }
-  
-  // CPU extensions
-  neorv32_uart_printf("\nEndianness:        ");
-  if (neorv32_cpu_csr_read(CSR_MSTATUSH) & (1<<CSR_MSTATUSH_MBE)) {
-    neorv32_uart_printf("big\n");
+    neorv32_uart0_printf("rv32-little");
   }
   else {
-    neorv32_uart_printf("little\n");
+    neorv32_uart0_printf("unknown");
   }
   
   // CPU extensions
-  neorv32_uart_printf("Extensions:        ");
+  neorv32_uart0_printf("\nISA extensions:    ");
   tmp = neorv32_cpu_csr_read(CSR_MISA);
   for (i=0; i<26; i++) {
     if (tmp & (1 << i)) {
       c = (char)('A' + i);
-      neorv32_uart_putc(c);
-      neorv32_uart_putc(' ');
+      neorv32_uart0_putc(c);
+      neorv32_uart0_putc(' ');
     }
   }
   
-  // Z* CPU extensions (from custom "mzext" CSR)
-  tmp = neorv32_cpu_csr_read(CSR_MZEXT);
-  if (tmp & (1<<CSR_MZEXT_ZICSR)) {
-    neorv32_uart_printf("Zicsr ");
+  // Z* CPU extensions
+  tmp = SYSINFO_CPU;
+  if (tmp & (1<<SYSINFO_CPU_ZICSR)) {
+    neorv32_uart0_printf("Zicsr ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZIFENCEI)) {
-    neorv32_uart_printf("Zifencei ");
+  if (tmp & (1<<SYSINFO_CPU_ZIFENCEI)) {
+    neorv32_uart0_printf("Zifencei ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZBB)) {
-    neorv32_uart_printf("Zbb ");
+  if (tmp & (1<<SYSINFO_CPU_ZMMUL)) {
+    neorv32_uart0_printf("Zmmul ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZBS)) {
-    neorv32_uart_printf("Zbs ");
+  if (tmp & (1<<SYSINFO_CPU_ZBB)) {
+    neorv32_uart0_printf("Zbb ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZBA)) {
-    neorv32_uart_printf("Zba ");
+
+  if (tmp & (1<<SYSINFO_CPU_ZFINX)) {
+    neorv32_uart0_printf("Zfinx ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZFINX)) {
-    neorv32_uart_printf("Zfinx ");
+  if (tmp & (1<<SYSINFO_CPU_ZXNOCNT)) {
+    neorv32_uart0_printf("Zxnocnt(!) ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZXNOCNT)) {
-    neorv32_uart_printf("Zxnocnt(!) ");
+  if (tmp & (1<<SYSINFO_CPU_ZXSCNT)) {
+    neorv32_uart0_printf("Zxscnt(!) ");
   }
-  if (tmp & (1<<CSR_MZEXT_ZXSCNT)) {
-    neorv32_uart_printf("Zxscnt(!) ");
+  if (tmp & (1<<SYSINFO_CPU_DEBUGMODE)) {
+    neorv32_uart0_printf("Debug-Mode ");
+  }
+
+  if (tmp & (1<<SYSINFO_CPU_FASTMUL)) {
+    neorv32_uart0_printf("FAST_MUL ");
+  }
+  if (tmp & (1<<SYSINFO_CPU_FASTSHIFT)) {
+    neorv32_uart0_printf("FAST_SHIFT ");
   }
 
   // check physical memory protection
-  neorv32_uart_printf("\nPMP:               ");
+  neorv32_uart0_printf("\nPMP:               ");
   uint32_t pmp_num_regions = neorv32_cpu_pmp_get_num_regions();
   if (pmp_num_regions != 0)  {
-    neorv32_uart_printf("%u regions, %u bytes minimal granularity\n", pmp_num_regions, neorv32_cpu_pmp_get_granularity());
+    neorv32_uart0_printf("%u regions, %u bytes minimal granularity\n", pmp_num_regions, neorv32_cpu_pmp_get_granularity());
   }
   else {
-    neorv32_uart_printf("not implemented\n");
+    neorv32_uart0_printf("not implemented\n");
   }
 
   // check hardware performance monitors
-  neorv32_uart_printf("HPM Counters:      %ux, %u-bit wide\n", neorv32_cpu_hpm_get_counters(), neorv32_cpu_hpm_get_size());
+  neorv32_uart0_printf("HPM Counters:      %u counters, %u-bit wide\n", neorv32_cpu_hpm_get_counters(), neorv32_cpu_hpm_get_size());
 
 
   // Memory configuration
-  neorv32_uart_printf("\n=== << Memory Configuration >> ===\n");
+  neorv32_uart0_printf("\n=== << Memory Configuration >> ===\n");
 
-  neorv32_uart_printf("Instr. base address:  0x%x\n", SYSINFO_ISPACE_BASE);
+  neorv32_uart0_printf("Instr. base address:  0x%x\n", SYSINFO_ISPACE_BASE);
 
   // IMEM
-  neorv32_uart_printf("Internal IMEM:        ");
+  neorv32_uart0_printf("Internal IMEM:        ");
   if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_INT_IMEM)) {
-    neorv32_uart_printf("yes, %u bytes", SYSINFO_IMEM_SIZE);
-    if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_INT_IMEM_ROM)) {
-      neorv32_uart_printf(", read-only (ROM)");
-    }
+    neorv32_uart0_printf("yes, %u bytes\n", SYSINFO_IMEM_SIZE);
   }
   else {
-    neorv32_uart_printf("no");
+    neorv32_uart0_printf("no\n");
   }
-  neorv32_uart_printf("\n");
 
   // DMEM
-  neorv32_uart_printf("Data base address:    0x%x\n", SYSINFO_DSPACE_BASE);
-  neorv32_uart_printf("Internal DMEM:        ");
-  if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_INT_DMEM)) { neorv32_uart_printf("yes, %u bytes\n", SYSINFO_DMEM_SIZE); }
-  else {  neorv32_uart_printf("no\n"); }
+  neorv32_uart0_printf("Data base address:    0x%x\n", SYSINFO_DSPACE_BASE);
+  neorv32_uart0_printf("Internal DMEM:        ");
+  if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_INT_DMEM)) { neorv32_uart0_printf("yes, %u bytes\n", SYSINFO_DMEM_SIZE); }
+  else {  neorv32_uart0_printf("no\n"); }
 
   // i-cache
-  neorv32_uart_printf("Internal i-cache:     ");
+  neorv32_uart0_printf("Internal i-cache:     ");
   __neorv32_rte_print_true_false(SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_ICACHE));
   if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_ICACHE)) {
-    neorv32_uart_printf("- ");
+    neorv32_uart0_printf("- ");
 
     uint32_t ic_block_size = (SYSINFO_CACHE >> SYSINFO_CACHE_IC_BLOCK_SIZE_0) & 0x0F;
     if (ic_block_size) {
@@ -422,71 +423,45 @@ void neorv32_rte_print_hw_config(void) {
     uint32_t ic_associativity = (SYSINFO_CACHE >> SYSINFO_CACHE_IC_ASSOCIATIVITY_0) & 0x0F;
     ic_associativity = 1 << ic_associativity;
 
-    neorv32_uart_printf("%u bytes: %u set(s), %u block(s) per set, %u bytes per block", ic_associativity*ic_num_blocks*ic_block_size, ic_associativity, ic_num_blocks, ic_block_size);
+    neorv32_uart0_printf("%u bytes: %u set(s), %u block(s) per set, %u bytes per block", ic_associativity*ic_num_blocks*ic_block_size, ic_associativity, ic_num_blocks, ic_block_size);
     if (ic_associativity == 1) {
-      neorv32_uart_printf(" (direct-mapped)\n");
+      neorv32_uart0_printf(" (direct-mapped)\n");
     }
     else if (((SYSINFO_CACHE >> SYSINFO_CACHE_IC_REPLACEMENT_0) & 0x0F) == 1) {
-      neorv32_uart_printf(" (LRU replacement policy)\n");
+      neorv32_uart0_printf(" (LRU replacement policy)\n");
     }
     else {
-      neorv32_uart_printf("\n");
+      neorv32_uart0_printf("\n");
     }
   }
 
-  neorv32_uart_printf("Bootloader:           ");
-  __neorv32_rte_print_true_false(SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_BOOTLOADER));
-
-  neorv32_uart_printf("Ext. bus interface:   ");
+  neorv32_uart0_printf("Ext. bus interface:   ");
   __neorv32_rte_print_true_false(SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_EXT));
-  neorv32_uart_printf("Ext. bus Endianness:  ");
+  neorv32_uart0_printf("Ext. bus Endianness:  ");
   if (SYSINFO_FEATURES & (1 << SYSINFO_FEATURES_MEM_EXT_ENDIAN)) {
-    neorv32_uart_printf("big\n");
+    neorv32_uart0_printf("big\n");
   }
   else {
-    neorv32_uart_printf("little\n");
+    neorv32_uart0_printf("little\n");
   }
 
   // peripherals
-  neorv32_uart_printf("\n=== << Peripherals >> ===\n");
+  neorv32_uart0_printf("\n=== << Peripherals >> ===\n");
 
   tmp = SYSINFO_FEATURES;
-
-  neorv32_uart_printf("GPIO   - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_GPIO));
-
-  neorv32_uart_printf("MTIME  - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_MTIME));
-
-  neorv32_uart_printf("UART0  - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_UART0));
-
-  neorv32_uart_printf("UART1  - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_UART1));
-
-  neorv32_uart_printf("SPI    - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_SPI));
-
-  neorv32_uart_printf("TWI    - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_TWI));
-
-  neorv32_uart_printf("PWM    - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_PWM));
-
-  neorv32_uart_printf("WDT    - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_WDT));
-
-  neorv32_uart_printf("TRNG   - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_TRNG));
-
-  neorv32_uart_printf("CFS    - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_CFS));
-
-  neorv32_uart_printf("NCO    - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_NCO));
-
-  neorv32_uart_printf("NEOLED - ");
-  __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_NEOLED));
+  neorv32_uart0_printf("GPIO   - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_GPIO));
+  neorv32_uart0_printf("MTIME  - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_MTIME));
+  neorv32_uart0_printf("UART0  - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_UART0));
+  neorv32_uart0_printf("UART1  - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_UART1));
+  neorv32_uart0_printf("SPI    - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_SPI));
+  neorv32_uart0_printf("TWI    - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_TWI));
+  neorv32_uart0_printf("PWM    - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_PWM));
+  neorv32_uart0_printf("WDT    - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_WDT));
+  neorv32_uart0_printf("TRNG   - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_TRNG));
+  neorv32_uart0_printf("CFS    - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_CFS));
+  neorv32_uart0_printf("SLINK  - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_SLINK));
+  neorv32_uart0_printf("NEOLED - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_NEOLED));
+  neorv32_uart0_printf("XIRQ   - "); __neorv32_rte_print_true_false(tmp & (1 << SYSINFO_FEATURES_IO_XIRQ));
 }
 
 
@@ -499,10 +474,10 @@ void neorv32_rte_print_hw_config(void) {
 static void __neorv32_rte_print_true_false(int state) {
 
   if (state) {
-    neorv32_uart_print("yes\n");
+    neorv32_uart0_print("yes\n");
   }
   else {
-    neorv32_uart_print("no\n");
+    neorv32_uart0_print("no\n");
   }
 }
 
@@ -517,12 +492,12 @@ void __neorv32_rte_print_hex_word(uint32_t num) {
 
   static const char hex_symbols[16] = "0123456789ABCDEF";
 
-  neorv32_uart_print("0x");
+  neorv32_uart0_print("0x");
 
   int i;
   for (i=0; i<8; i++) {
     uint32_t index = (num >> (28 - 4*i)) & 0xF;
-    neorv32_uart_putc(hex_symbols[index]);
+    neorv32_uart0_putc(hex_symbols[index]);
   }
 }
 
@@ -534,6 +509,10 @@ void neorv32_rte_print_hw_version(void) {
 
   uint32_t i;
   char tmp, cnt;
+
+  if (neorv32_uart0_available() == 0) {
+    return; // cannot output anything if UART0 is not implemented
+  }
 
   for (i=0; i<4; i++) {
 
@@ -547,11 +526,11 @@ void neorv32_rte_print_hw_version(void) {
     }
 
     if (cnt) {
-      neorv32_uart_putc('0' + cnt);
+      neorv32_uart0_putc('0' + cnt);
     }
-    neorv32_uart_putc('0' + tmp);
+    neorv32_uart0_putc('0' + tmp);
     if (i < 3) {
-      neorv32_uart_putc('.');
+      neorv32_uart0_putc('.');
     }
   }
 }
@@ -562,10 +541,14 @@ void neorv32_rte_print_hw_version(void) {
  **************************************************************************/
 void neorv32_rte_print_credits(void) {
 
-  neorv32_uart_print("The NEORV32 Processor Project\n"
-                     "Copyright 2021, Stephan Nolting\n"
-                     "BSD 3-Clause License\n"
-                     "https://github.com/stnolting/neorv32\n\n");
+  if (neorv32_uart0_available() == 0) {
+    return; // cannot output anything if UART0 is not implemented
+  }
+
+  neorv32_uart0_print("The NEORV32 RISC-V Processor\n"
+                      "(c) Stephan Nolting\n"
+                      "BSD 3-Clause License\n"
+                      "https://github.com/stnolting/neorv32\n\n");
 }
 
 
@@ -592,22 +575,26 @@ void neorv32_rte_print_logo(void) {
   int u,v,w;
   uint32_t tmp;
 
+  if (neorv32_uart0_available() == 0) {
+    return; // cannot output anything if UART0 is not implemented
+  }
+
   for (u=0; u<11; u++) {
-    neorv32_uart_print("\n");
+    neorv32_uart0_print("\n");
     for (v=0; v<4; v++) {
       tmp = logo_data_c[u][v];
       for (w=0; w<32; w++){
-        if (tmp & 0x80000000UL) { // check MSB
-          neorv32_uart_putc('#');
+        if (((int32_t)tmp) < 0) { // check MSB
+          neorv32_uart0_putc('#');
         }
         else {
-          neorv32_uart_putc(' ');
+          neorv32_uart0_putc(' ');
         }
         tmp <<= 1;
       }
     }
   }
-  neorv32_uart_print("\n");
+  neorv32_uart0_print("\n");
 }
 
 
@@ -615,6 +602,10 @@ void neorv32_rte_print_logo(void) {
  * NEORV32 runtime environment: Print project license
  **************************************************************************/
 void neorv32_rte_print_license(void) {
+
+  if (neorv32_uart0_available() == 0) {
+    return; // cannot output anything if UART0 is not implemented
+  }
 
   neorv32_uart_print(
   "\n"
@@ -661,41 +652,41 @@ uint32_t neorv32_rte_get_compiler_isa(void) {
   uint32_t misa_cc = 0;
 
 #if defined __riscv_atomic || defined __riscv_a
-  misa_cc |= 1 << CSR_MISA_A_EXT;
+  misa_cc |= 1 << CSR_MISA_A;
 #endif
 
 #ifdef __riscv_b
-  misa_cc |= 1 << CSR_MISA_B_EXT;
+  misa_cc |= 1 << CSR_MISA_B;
 #endif
 
 #if defined __riscv_compressed || defined __riscv_c
-  misa_cc |= 1 << CSR_MISA_C_EXT;
+  misa_cc |= 1 << CSR_MISA_C;
 #endif
 
 #if (__riscv_flen == 64) || defined __riscv_d
-  misa_cc |= 1 << CSR_MISA_D_EXT;
+  misa_cc |= 1 << CSR_MISA_D;
 #endif
 
 #ifdef __riscv_32e
-  misa_cc |= 1 << CSR_MISA_E_EXT;
+  misa_cc |= 1 << CSR_MISA_E;
 #else
-  misa_cc |= 1 << CSR_MISA_I_EXT;
+  misa_cc |= 1 << CSR_MISA_I;
 #endif
 
 #if (__riscv_flen == 32) || defined __riscv_f
-  misa_cc |= 1 << CSR_MISA_F_EXT;
+  misa_cc |= 1 << CSR_MISA_F;
 #endif
 
 #if defined __riscv_mul || defined __riscv_m
-  misa_cc |= 1 << CSR_MISA_M_EXT;
+  misa_cc |= 1 << CSR_MISA_M;
 #endif
 
 #if (__riscv_xlen == 32)
-  misa_cc |= 1 << CSR_MISA_MXL_LO_EXT;
+  misa_cc |= 1 << CSR_MISA_MXL_LO;
 #elif (__riscv_xlen == 64)
-  misa_cc |= 2 << CSR_MISA_MXL_LO_EXT;
+  misa_cc |= 2 << CSR_MISA_MXL_LO;
 #else
-  misa_cc |= 3 << CSR_MISA_MXL_LO_EXT;
+  misa_cc |= 3 << CSR_MISA_MXL_LO;
 #endif
 
   return misa_cc;
@@ -721,7 +712,7 @@ int neorv32_rte_check_isa(int silent) {
     return 0;
   }
   else {
-    if (silent == 0) {
+    if ((silent == 0) || (neorv32_uart0_available() == 0)) {
       neorv32_uart_printf("\nWARNING! SW_ISA (features required) vs HW_ISA (features available) mismatch!\n"
                           "SW_ISA = 0x%x (compiler flags)\n"
                           "HW_ISA = 0x%x (misa csr)\n\n", misa_sw, misa_hw);

@@ -46,6 +46,7 @@
 #include "neorv32.h"
 #include "neorv32_uart.h"
 #include <string.h>
+#include <stdarg.h>
 
 /// \cond
 // Private functions
@@ -91,6 +92,13 @@ void neorv32_uart_setup(uint32_t baudrate, uint8_t parity, uint8_t flow_con) { n
  * @warning This functions maps to UART0 (primary UART).
  **************************************************************************/
 void neorv32_uart_disable(void) { neorv32_uart0_disable(); }
+
+
+/**********************************************************************//**
+ * Enable UART0.
+ * @warning This functions maps to UART0 (primary UART).
+ **************************************************************************/
+void neorv32_uart_enable(void) { neorv32_uart0_enable(); }
 
 
 /**********************************************************************//**
@@ -310,6 +318,15 @@ void neorv32_uart0_disable(void) {
 
 
 /**********************************************************************//**
+ * Enable UART0.
+ **************************************************************************/
+void neorv32_uart0_enable(void) {
+
+  UART0_CT = ((uint32_t)(1 << UART_CT_EN));
+}
+
+
+/**********************************************************************//**
  * Send single char via UART0.
  *
  * @note This function is blocking.
@@ -318,13 +335,9 @@ void neorv32_uart0_disable(void) {
  **************************************************************************/
 void neorv32_uart0_putc(char c) {
 
-#if defined UART0_SIM_MODE || defined UART_SIM_MODE
-  UART0_DATA = ((uint32_t)c) << UART_DATA_LSB;
-#else
   // wait for previous transfer to finish
   while ((UART0_CT & (1<<UART_CT_TX_BUSY)) != 0);
   UART0_DATA = ((uint32_t)c) << UART_DATA_LSB;
-#endif
 }
 
 
@@ -665,6 +678,15 @@ void neorv32_uart1_disable(void) {
 
 
 /**********************************************************************//**
+ * Enable UART1.
+ **************************************************************************/
+void neorv32_uart1_enable(void) {
+
+  UART1_CT |= ((uint32_t)(1 << UART_CT_EN));
+}
+
+
+/**********************************************************************//**
  * Send single char via UART1.
  *
  * @note This function is blocking.
@@ -673,13 +695,9 @@ void neorv32_uart1_disable(void) {
  **************************************************************************/
 void neorv32_uart1_putc(char c) {
 
-#ifdef UART1_SIM_MODE
-  UART1_DATA = ((uint32_t)c) << UART_DATA_LSB;
-#else
   // wait for previous transfer to finish
   while ((UART1_CT & (1<<UART_CT_TX_BUSY)) != 0);
   UART1_DATA = ((uint32_t)c) << UART_DATA_LSB;
-#endif
 }
 
 

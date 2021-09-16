@@ -44,9 +44,9 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_icache is
   generic (
-    ICACHE_NUM_BLOCKS : natural := 4;  -- number of blocks (min 1), has to be a power of 2
-    ICACHE_BLOCK_SIZE : natural := 16; -- block size in bytes (min 4), has to be a power of 2
-    ICACHE_NUM_SETS   : natural := 1   -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+    ICACHE_NUM_BLOCKS : natural; -- number of blocks (min 1), has to be a power of 2
+    ICACHE_BLOCK_SIZE : natural; -- block size in bytes (min 4), has to be a power of 2
+    ICACHE_NUM_SETS   : natural  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
   );
   port (
     -- global control --
@@ -60,7 +60,6 @@ entity neorv32_icache is
     host_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
     host_we_i     : in  std_ulogic; -- write enable
     host_re_i     : in  std_ulogic; -- read enable
-    host_cancel_i : in  std_ulogic; -- cancel current bus transaction
     host_ack_o    : out std_ulogic; -- bus transfer acknowledge
     host_err_o    : out std_ulogic; -- bus transfer error
     -- peripheral bus interface --
@@ -70,7 +69,6 @@ entity neorv32_icache is
     bus_ben_o     : out std_ulogic_vector(03 downto 0); -- byte enable
     bus_we_o      : out std_ulogic; -- write enable
     bus_re_o      : out std_ulogic; -- read enable
-    bus_cancel_o  : out std_ulogic; -- cancel current bus transaction
     bus_ack_i     : in  std_ulogic; -- bus transfer acknowledge
     bus_err_i     : in  std_ulogic  -- bus transfer error
   );
@@ -132,17 +130,18 @@ architecture neorv32_icache_rtl of neorv32_icache is
 
   -- control engine --
   type ctrl_engine_state_t is (S_IDLE, S_CACHE_CLEAR, S_CACHE_CHECK, S_CACHE_MISS, S_BUS_DOWNLOAD_REQ, S_BUS_DOWNLOAD_GET,
-                               S_CACHE_RESYNC_0, S_CACHE_RESYNC_1, S_BUS_ERROR, S_ERROR, S_HOST_CANCEL);
+                               S_CACHE_RESYNC_0, S_CACHE_RESYNC_1, S_BUS_ERROR);
   type ctrl_t is record
-    state          : ctrl_engine_state_t; -- current state
-    state_nxt      : ctrl_engine_state_t; -- next state
-    addr_reg       : std_ulogic_vector(31 downto 0); -- address register for block download
-    addr_reg_nxt   : std_ulogic_vector(31 downto 0);
+    state         : ctrl_engine_state_t; -- current state
+    state_nxt     : ctrl_engine_state_t; -- next state
+    addr_reg      : std_ulogic_vector(31 downto 0); -- address register for block download
+    addr_reg_nxt  : std_ulogic_vector(31 downto 0);
     --
-    re_buf         : std_ulogic; -- read request buffer
-    re_buf_nxt     : std_ulogic;
-    cancel_buf     : std_ulogic; -- cancel request buffer
-    cancel_buf_nxt : std_ulogic;
+    re_buf        : std_ulogic; -- read request buffer
+    re_buf_nxt    : std_ulogic;
+    --
+    clear_buf     : std_ulogic; -- clear request buffer
+    clear_buf_nxt : std_ulogic;
   end record;
   signal ctrl : ctrl_t;
 
@@ -165,13 +164,13 @@ begin
   ctrl_engine_fsm_sync_rst: process(rstn_i, clk_i)
   begin
     if (rstn_i = '0') then
-      ctrl.state      <= S_CACHE_CLEAR;
-      ctrl.re_buf     <= '0';
-      ctrl.cancel_buf <= '0';
+      ctrl.state     <= S_CACHE_CLEAR;
+      ctrl.re_buf    <= '0';
+      ctrl.clear_buf <= '0';
     elsif rising_edge(clk_i) then
-      ctrl.state      <= ctrl.state_nxt;
-      ctrl.re_buf     <= ctrl.re_buf_nxt;
-      ctrl.cancel_buf <= ctrl.cancel_buf_nxt;
+      ctrl.state     <= ctrl.state_nxt;
+      ctrl.re_buf    <= ctrl.re_buf_nxt;
+      ctrl.clear_buf <= ctrl.clear_buf_nxt;
     end if;
   end process ctrl_engine_fsm_sync_rst;
 
@@ -186,13 +185,13 @@ begin
 
   -- Control Engine FSM Comb ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  ctrl_engine_fsm_comb: process(ctrl, cache, clear_i, host_addr_i, host_re_i, host_cancel_i, bus_rdata_i, bus_ack_i, bus_err_i)
+  ctrl_engine_fsm_comb: process(ctrl, cache, clear_i, host_addr_i, host_re_i, bus_rdata_i, bus_ack_i, bus_err_i)
   begin
     -- control defaults --
     ctrl.state_nxt        <= ctrl.state;
     ctrl.addr_reg_nxt     <= ctrl.addr_reg;
-    ctrl.re_buf_nxt       <= (ctrl.re_buf    or host_re_i) and (not host_cancel_i);
-    ctrl.cancel_buf_nxt   <= ctrl.cancel_buf or host_cancel_i;
+    ctrl.re_buf_nxt       <= ctrl.re_buf or host_re_i;
+    ctrl.clear_buf_nxt    <= ctrl.clear_buf or clear_i; -- buffer clear request from CPU
 
     -- cache defaults --
     cache.clear           <= '0';
@@ -216,30 +215,29 @@ begin
     bus_ben_o             <= (others => '0'); -- cache is read-only
     bus_we_o              <= '0'; -- cache is read-only
     bus_re_o              <= '0';
-    bus_cancel_o          <= '0';
 
     -- fsm --
     case ctrl.state is
 
       when S_IDLE => -- wait for host access request or cache control operation
       -- ------------------------------------------------------------
-        if (clear_i = '1') then -- cache control operation?
+        if (ctrl.clear_buf = '1') then -- cache control operation?
           ctrl.state_nxt <= S_CACHE_CLEAR;
         elsif (host_re_i = '1') or (ctrl.re_buf = '1') then -- cache access
-          ctrl.re_buf_nxt     <= '0';
-          ctrl.cancel_buf_nxt <= '0';
-          ctrl.state_nxt      <= S_CACHE_CHECK;
+          ctrl.re_buf_nxt <= '0';
+          ctrl.state_nxt  <= S_CACHE_CHECK;
         end if;
 
       when S_CACHE_CLEAR => -- invalidate all cache entries
       -- ------------------------------------------------------------
-        cache.clear    <= '1';
-        ctrl.state_nxt <= S_IDLE;
+        ctrl.clear_buf_nxt <= '0';
+        cache.clear        <= '1';
+        ctrl.state_nxt     <= S_IDLE;
 
       when S_CACHE_CHECK => -- finalize host access if cache hit
       -- ------------------------------------------------------------
         if (cache.hit = '1') then -- cache HIT
-          host_ack_o     <= not ctrl.cancel_buf; -- ACK if request has not been canceled
+          host_ack_o     <= '1';
           ctrl.state_nxt <= S_IDLE;
         else -- cache MISS
           ctrl.state_nxt <= S_CACHE_MISS;
@@ -252,14 +250,11 @@ begin
         ctrl.addr_reg_nxt((2+cache_offset_size_c)-1 downto 2) <= (others => '0'); -- block-aligned
         ctrl.addr_reg_nxt(1 downto 0) <= "00"; -- word-aligned
         --
-        if (host_cancel_i = '1') or (ctrl.cancel_buf = '1') then -- 'early' CPU cancel (abort before bus transaction has even started)
-          ctrl.state_nxt <= S_IDLE;
-        else
-          ctrl.state_nxt <= S_BUS_DOWNLOAD_REQ;
-        end if;
+        ctrl.state_nxt <= S_BUS_DOWNLOAD_REQ;
 
       when S_BUS_DOWNLOAD_REQ => -- download new cache block: request new word
       -- ------------------------------------------------------------
+        cache.ctrl_en  <= '1'; -- we are in cache control mode
         bus_re_o       <= '1'; -- request new read transfer
         ctrl.state_nxt <= S_BUS_DOWNLOAD_GET;
 
@@ -269,11 +264,9 @@ begin
         --
         if (bus_err_i = '1') then -- bus error
           ctrl.state_nxt <= S_BUS_ERROR;
-        elsif (ctrl.cancel_buf = '1') then -- 'late' CPU cancel (timeout?)
-          ctrl.state_nxt <= S_HOST_CANCEL;
         elsif (bus_ack_i = '1') then -- ACK = write to cache and get next word
           cache.ctrl_we <= '1'; -- write to cache
-          if (and_all_f(ctrl.addr_reg((2+cache_offset_size_c)-1 downto 2)) = '1') then -- block complete?
+          if (and_reduce_f(ctrl.addr_reg((2+cache_offset_size_c)-1 downto 2)) = '1') then -- block complete?
             cache.ctrl_tag_we   <= '1'; -- current block is valid now
             cache.ctrl_valid_we <= '1'; -- write tag of current address
             ctrl.state_nxt      <= S_CACHE_RESYNC_0;
@@ -289,27 +282,13 @@ begin
 
       when S_CACHE_RESYNC_1 => -- re-sync host/cache access: finalize CPU request
       -- ------------------------------------------------------------
-        host_ack_o     <= not ctrl.cancel_buf; -- ACK if request has not been canceled
+        host_ack_o     <= '1';
         ctrl.state_nxt <= S_IDLE;
 
       when S_BUS_ERROR => -- bus error during download
       -- ------------------------------------------------------------
         host_err_o     <= '1';
-        ctrl.state_nxt <= S_ERROR;
-
-      when S_ERROR => -- wait for CPU to cancel faulting transfer
-      -- ------------------------------------------------------------
-        if (host_cancel_i = '1') then
-          bus_cancel_o   <= '1';
-          ctrl.state_nxt <= S_IDLE;
-        end if;
-
-      when S_HOST_CANCEL => -- host cancels transfer
-      -- ------------------------------------------------------------
-        cache.ctrl_en         <= '1'; -- we are in cache control mode
-        cache.ctrl_invalid_we <= '1'; -- invalidate current cache block
-        bus_cancel_o          <= '1';
-        ctrl.state_nxt        <= S_IDLE;
+        ctrl.state_nxt <= S_IDLE;
 
       when others => -- undefined
       -- ------------------------------------------------------------
@@ -503,7 +482,7 @@ begin
       history.re_ff <= host_re_i;
       if (invalidate_i = '1') then -- invalidate whole cache
         history.last_used_set <= (others => '1');
-      elsif (history.re_ff = '1') and (or_all_f(hit) = '1') then -- store last accessed set that caused a hit
+      elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
         history.last_used_set(to_integer(unsigned(cache_index))) <= not hit(0);
       end if;
       history.to_be_replaced <= history.last_used_set(to_integer(unsigned(cache_index)));
@@ -574,7 +553,7 @@ begin
   end process comparator;
 
   -- global hit --
-  hit_o <= or_all_f(hit);
+  hit_o <= or_reduce_f(hit);
 
 
 	-- Cache Data Memory ----------------------------------------------------------------------

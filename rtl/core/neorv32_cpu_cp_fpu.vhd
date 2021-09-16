@@ -63,7 +63,6 @@ entity neorv32_cpu_cp_fpu is
     ctrl_i   : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
     start_i  : in  std_ulogic; -- trigger operation
     -- data input --
-    frm_i    : in  std_ulogic_vector(2 downto 0); -- rounding mode
     cmp_i    : in  std_ulogic_vector(1 downto 0); -- comparator status
     rs1_i    : in  std_ulogic_vector(data_width_c-1 downto 0); -- rf source 1
     rs2_i    : in  std_ulogic_vector(data_width_c-1 downto 0); -- rf source 2
@@ -313,9 +312,9 @@ begin
   begin
     for i in 0 to 1 loop -- for rs1 and rs2 inputs
       -- check for all-zero/all-one --
-      op_m_all_zero_v := not or_all_f(op_data(i)(22 downto 00));
-      op_e_all_zero_v := not or_all_f(op_data(i)(30 downto 23));
-      op_e_all_one_v  := and_all_f(op_data(i)(30 downto 23));
+      op_m_all_zero_v := not or_reduce_f(op_data(i)(22 downto 00));
+      op_e_all_zero_v := not or_reduce_f(op_data(i)(30 downto 23));
+      op_e_all_one_v  := and_reduce_f(op_data(i)(30 downto 23));
 
       -- check special cases --
       op_is_zero_v   := op_e_all_zero_v and      op_m_all_zero_v;  -- zero
@@ -367,7 +366,7 @@ begin
           -- rounding mode --
           -- TODO / FIXME "round to nearest, ties to max magnitude" (0b100) is not supported yet
           if (ctrl_i(ctrl_ir_funct3_2_c downto ctrl_ir_funct3_0_c) = "111") then
-            fpu_operands.frm <= '0' & frm_i(1 downto 0);
+            fpu_operands.frm <= '0' & ctrl_i(ctrl_alu_frm1_c downto ctrl_alu_frm0_c);
           else
             fpu_operands.frm <= '0' & ctrl_i(ctrl_ir_funct3_1_c downto ctrl_ir_funct3_0_c);
           end if;
@@ -505,7 +504,7 @@ begin
 
   -- Min/Max Select (FMIN/FMAX) -------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  min_max_select: process(fpu_operands, comp_less_ff, fpu_operands, fu_compare, ctrl_i)
+  min_max_select: process(fpu_operands, comp_less_ff, fu_compare, ctrl_i)
     variable cond_v : std_ulogic_vector(2 downto 0);
   begin
     -- comparison restul - check for special cases: -0 is less than +0
@@ -1360,7 +1359,7 @@ begin
           sreg.lower <= mantissa_i(45 downto 23);
           sreg.ext_g <= mantissa_i(22);
           sreg.ext_r <= mantissa_i(21);
-          sreg.ext_s <= or_all_f(mantissa_i(20 downto 0));
+          sreg.ext_s <= or_reduce_f(mantissa_i(20 downto 0));
           -- check for special cases --
           if ((ctrl.class(fp_class_snan_c)       or ctrl.class(fp_class_qnan_c)       or -- NaN
                ctrl.class(fp_class_neg_zero_c)   or ctrl.class(fp_class_pos_zero_c)   or -- zero
@@ -1475,10 +1474,10 @@ begin
   end process ctrl_engine;
 
   -- stop shifting when normalized --
-  sreg.done <= (not or_all_f(sreg.upper(sreg.upper'left downto 1))) and sreg.upper(0); -- input is zero, hidden one is set
+  sreg.done <= (not or_reduce_f(sreg.upper(sreg.upper'left downto 1))) and sreg.upper(0); -- input is zero, hidden one is set
 
   -- all-zero including hidden bit --
-  sreg.zero <= not or_all_f(sreg.upper);
+  sreg.zero <= not or_reduce_f(sreg.upper);
 
   -- result --
   result_o(31)           <= ctrl.res_sgn;
@@ -1717,8 +1716,8 @@ begin
 
         when S_NORMALIZE_BUSY => -- running normalization cycle
         -- ------------------------------------------------------------
-          sreg.ext_s <= sreg.ext_s or or_all_f(sreg.mant(sreg.mant'left-2 downto 0)); -- sticky bit
-          if (or_all_f(ctrl.cnt(ctrl.cnt'left-1 downto 0)) = '0') then
+          sreg.ext_s <= sreg.ext_s or or_reduce_f(sreg.mant(sreg.mant'left-2 downto 0)); -- sticky bit
+          if (or_reduce_f(ctrl.cnt(ctrl.cnt'left-1 downto 0)) = '0') then
             if (ctrl.unsign = '0') then -- signed conversion
               ctrl.over <= ctrl.over or sreg.int(sreg.int'left); -- update overrun flag again to check for numerical overflow into sign bit
             end if;

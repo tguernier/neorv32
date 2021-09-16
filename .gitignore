@@ -4,6 +4,7 @@
 *.elf
 *.asm
 *.out
+*.hex
 *_image.vhd
 
 # keep default VHDL memory images
@@ -39,3 +40,9 @@ sw/image_gen/image_gen.exe
 
 # minicom terminal logs
 *.cap
+
+/setups/examples/*.svf
+
+# riscv-arch-test
+
+/sim/work/

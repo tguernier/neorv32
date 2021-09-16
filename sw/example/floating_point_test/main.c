@@ -99,7 +99,7 @@ void print_report(uint32_t num_err);
  *
  * @note This program requires the Zfinx CPU extension.
  *
- * @return Irrelevant.
+ * @return 0 if execution was successful
  **************************************************************************/
 int main() {
 
@@ -123,20 +123,20 @@ int main() {
   neorv32_rte_check_isa(0); // silent = 0 -> show message if isa mismatch
 
   // check if Zfinx extension is implemented at all
-  if (neorv32_check_zextension(CSR_MZEXT_ZFINX) == 0) {
+  if ((SYSINFO_CPU & (1<<SYSINFO_CPU_ZFINX)) == 0) {
     neorv32_uart_print("Error! <Zfinx> extension not synthesized!\n");
-    return 0;
+    return 1;
   }
 
 
 // Disable compilation by default
-#ifndef RUN_TEST
-  #warning Program HAS NOT BEEN COMPILED! Use >>make USER_FLAGS+=-DRUN_TEST clean_all exe<< to compile it.
+#ifndef RUN_CHECK
+  #warning Program HAS NOT BEEN COMPILED! Use >>make USER_FLAGS+=-DRUN_CHECK clean_all exe<< to compile it.
 
   // inform the user if you are actually executing this
-  neorv32_uart_printf("ERROR! Program has not been compiled. Use >>make USER_FLAGS+=-DRUN_TEST clean_all exe<< to compile it.\n");
+  neorv32_uart_printf("ERROR! Program has not been compiled. Use >>make USER_FLAGS+=-DRUN_CHECK clean_all exe<< to compile it.\n");
 
-  return 0;
+  return 1;
 #endif
 
 
@@ -148,9 +148,8 @@ int main() {
   neorv32_uart_printf("Test cases per instruction: %u\n", (uint32_t)NUM_TEST_CASES);
   neorv32_uart_printf("NOTE: The NEORV32 FPU does not support subnormal numbers yet. Subnormal numbers are flushed to zero.\n\n");
 
-
   // clear exception status word
-  neorv32_cpu_csr_write(CSR_FFLAGS, 0);; // real hardware
+  neorv32_cpu_csr_write(CSR_FFLAGS, 0); // real hardware
   feclearexcept(FE_ALL_EXCEPT); // software runtime (GCC floating-point emulation)
 
 
@@ -813,12 +812,13 @@ int main() {
   if (err_cnt_total != 0) {
     neorv32_uart_printf("\n%c[1m[ZFINX EXTENSION VERIFICATION FAILED!]%c[0m\n", 27, 27);
     neorv32_uart_printf("%u errors in %u test cases\n", err_cnt_total, test_cnt*(uint32_t)NUM_TEST_CASES);
+    return 1;
   }
   else {
     neorv32_uart_printf("\n%c[1m[Zfinx extension verification successful!]%c[0m\n", 27, 27);
+    return 0;
   }
 
-  return 0;
 }
 
 

@@ -124,9 +124,10 @@ begin
 
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  assert not (num_roscs_c = 0) report "NEORV32 PROCESSOR CONFIG NOTE: TRNG - Total number of ring-oscillators has to be >0." severity error;
-  assert not ((num_inv_start_c mod 2)  = 0) report "NEORV32 PROCESSOR CONFIG NOTE: TRNG - Number of inverters in fisrt ring has to be odd." severity error;
-  assert not ((num_inv_inc_c   mod 2) /= 0) report "NEORV32 PROCESSOR CONFIG NOTE: TRNG - Number of inverters increment for each next ring has to be even." severity error;
+  assert not (num_roscs_c = 0) report "NEORV32 PROCESSOR CONFIG ERROR: TRNG - Total number of ring-oscillators has to be >0." severity error;
+  assert not ((num_inv_start_c mod 2)  = 0) report "NEORV32 PROCESSOR CONFIG ERROR: TRNG - Number of inverters in fisrt ring has to be odd." severity error;
+  assert not ((num_inv_inc_c   mod 2) /= 0) report "NEORV32 PROCESSOR CONFIG ERROR: TRNG - Number of inverters increment for each next ring has to be even." severity error;
+
 
   -- Access Control -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -190,7 +191,7 @@ begin
   neumann_debiasing_sync: process(clk_i)
   begin
     if rising_edge(clk_i) then
-      debiasing.sreg  <= debiasing.sreg(debiasing.sreg'left-1 downto 0) & xor_all_f(osc_array_data);
+      debiasing.sreg  <= debiasing.sreg(debiasing.sreg'left-1 downto 0) & xor_reduce_f(osc_array_data);
       debiasing.state <= (not debiasing.state) and osc_array_en_out(num_roscs_c-1); -- start toggling when last RO is enabled -> process in every second cycle
     end if;
   end process neumann_debiasing_sync;
@@ -225,7 +226,7 @@ begin
           processing.cnt <= std_ulogic_vector(unsigned(processing.cnt) + 1);
         end if;
         if (lfsr_en_c = true) then -- LFSR post-processing
-          processing.sreg <= processing.sreg(processing.sreg'left-1 downto 0) & (xnor_all_f(processing.sreg and lfsr_taps_c) xnor debiasing.data);
+          processing.sreg <= processing.sreg(processing.sreg'left-1 downto 0) & ((not xor_reduce_f(processing.sreg and lfsr_taps_c)) xnor debiasing.data);
         else -- NO post-processing
           processing.sreg <= processing.sreg(processing.sreg'left-1 downto 0) & debiasing.data;
         end if;
@@ -320,11 +321,6 @@ architecture neorv32_trng_ring_osc_rtl of neorv32_trng_ring_osc is
   signal sync_ff     : std_ulogic_vector(1 downto 0); -- output signal synchronizer
 
 begin
-
-  -- Sanity Checks --------------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  assert not ((NUM_INV mod 2) = 0) report "NEORV32 PROCESSOR CONFIG NOTE: TNRG.ring_oscillator - Number of inverters in ring has to be odd." severity error;
-
 
   -- Ring Oscillator ------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------

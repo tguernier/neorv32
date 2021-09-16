@@ -43,13 +43,11 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_cpu_bus is
   generic (
-    CPU_EXTENSION_RISCV_A : boolean := false; -- implement atomic extension?
-    CPU_EXTENSION_RISCV_C : boolean := true;  -- implement compressed extension?
+    CPU_EXTENSION_RISCV_A : boolean; -- implement atomic extension?
+    CPU_EXTENSION_RISCV_C : boolean; -- implement compressed extension?
     -- Physical memory protection (PMP) --
-    PMP_NUM_REGIONS       : natural := 0;     -- number of regions (0..64)
-    PMP_MIN_GRANULARITY   : natural := 64*1024; -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
-    -- Bus Timeout --
-    BUS_TIMEOUT           : natural := 63     -- cycles after an UNACKNOWLEDGED bus access triggers a bus fault exception
+    PMP_NUM_REGIONS       : natural; -- number of regions (0..64)
+    PMP_MIN_GRANULARITY   : natural  -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
   );
   port (
     -- global control --
@@ -70,7 +68,7 @@ entity neorv32_cpu_bus is
     mar_o          : out std_ulogic_vector(data_width_c-1 downto 0); -- current memory address register
     d_wait_o       : out std_ulogic; -- wait for access to complete
     --
-    bus_excl_ok_o  : out std_ulogic; -- bus exclusive access successful
+    excl_state_o   : out std_ulogic; -- atomic/exclusive access status
     ma_load_o      : out std_ulogic; -- misaligned load data address
     ma_store_o     : out std_ulogic; -- misaligned store data address
     be_load_o      : out std_ulogic; -- bus error on load data access
@@ -85,7 +83,7 @@ entity neorv32_cpu_bus is
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
     i_bus_re_o     : out std_ulogic; -- read enable
-    i_bus_cancel_o : out std_ulogic; -- cancel current bus transaction
+    i_bus_lock_o   : out std_ulogic; -- exclusive access request
     i_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
     i_bus_err_i    : in  std_ulogic; -- bus transfer error
     i_bus_fence_o  : out std_ulogic; -- fence operation
@@ -96,12 +94,10 @@ entity neorv32_cpu_bus is
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable
     d_bus_re_o     : out std_ulogic; -- read enable
-    d_bus_cancel_o : out std_ulogic; -- cancel current bus transaction
+    d_bus_lock_o   : out std_ulogic; -- exclusive access request
     d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
     d_bus_err_i    : in  std_ulogic; -- bus transfer error
-    d_bus_fence_o  : out std_ulogic; -- fence operation
-    d_bus_excl_o   : out std_ulogic; -- exclusive access request
-    d_bus_excl_i   : in  std_ulogic  -- state of exclusiv access (set if success)
+    d_bus_fence_o  : out std_ulogic  -- fence operation
   );
 end neorv32_cpu_bus;
 
@@ -122,6 +118,7 @@ architecture neorv32_cpu_bus_rtl of neorv32_cpu_bus is
   constant pmp_cfg_x_c  : natural := 2; -- execute permit
   constant pmp_cfg_al_c : natural := 3; -- mode bit low
   constant pmp_cfg_ah_c : natural := 4; -- mode bit high
+  --
   constant pmp_cfg_l_c  : natural := 7; -- locked entry
 
   -- data interface registers --
@@ -130,6 +127,7 @@ architecture neorv32_cpu_bus_rtl of neorv32_cpu_bus is
   -- data access --
   signal d_bus_wdata : std_ulogic_vector(data_width_c-1 downto 0); -- write data
   signal d_bus_rdata : std_ulogic_vector(data_width_c-1 downto 0); -- read data
+  signal rdata_align : std_ulogic_vector(data_width_c-1 downto 0); -- read-data alignment
   signal d_bus_ben   : std_ulogic_vector(3 downto 0); -- write data byte enable
 
   -- misaligned access? --
@@ -141,9 +139,12 @@ architecture neorv32_cpu_bus_rtl of neorv32_cpu_bus is
     wr_req    : std_ulogic; -- write access in progress
     err_align : std_ulogic; -- alignment error
     err_bus   : std_ulogic; -- bus access error
-    timeout   : std_ulogic_vector(index_size_f(BUS_TIMEOUT)-1 downto 0);
   end record;
   signal i_arbiter, d_arbiter : bus_arbiter_t;
+
+  -- atomic/exclusive access - reservation controller --
+  signal exclusive_lock        : std_ulogic;
+  signal exclusive_lock_status : std_ulogic_vector(data_width_c-1 downto 0); -- read data
 
   -- physical memory protection --
   type pmp_addr_t is array (0 to PMP_NUM_REGIONS-1) of std_ulogic_vector(data_width_c-1 downto 0);
@@ -258,7 +259,7 @@ begin
 
   -- Data Interface: Read Data --------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  mem_out_buf: process(rstn_i, clk_i)
+  mem_di_reg: process(rstn_i, clk_i)
   begin
     if (rstn_i = '0') then
       mdi <= (others => def_rst_val_c);
@@ -267,7 +268,7 @@ begin
         mdi <= d_bus_rdata; -- memory data input register (MDI)
       end if;
     end if;
-  end process mem_out_buf;
+  end process mem_di_reg;
 
   -- input data alignment and sign extension --
   read_align: process(mdi, mar, ctrl_i)
@@ -284,15 +285,18 @@ begin
     -- actual data size --
     case ctrl_i(ctrl_bus_size_msb_c downto ctrl_bus_size_lsb_c) is
       when "00" => -- byte
-        rdata_o(31 downto 08) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and byte_in_v(7))); -- sign extension
-        rdata_o(07 downto 00) <= byte_in_v;
+        rdata_align(31 downto 08) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and byte_in_v(7))); -- sign extension
+        rdata_align(07 downto 00) <= byte_in_v;
       when "01" => -- half-word
-        rdata_o(31 downto 16) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and hword_in_v(15))); -- sign extension
-        rdata_o(15 downto 00) <= hword_in_v; -- high half-word
+        rdata_align(31 downto 16) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and hword_in_v(15))); -- sign extension
+        rdata_align(15 downto 00) <= hword_in_v; -- high half-word
       when others => -- word
-        rdata_o <= mdi; -- full word
+        rdata_align <= mdi; -- full word
     end case;
   end process read_align;
+
+  -- insert exclusive lock status for SC operations only --
+  rdata_o <= exclusive_lock_status when (CPU_EXTENSION_RISCV_A = true) and (ctrl_i(ctrl_bus_ch_lock_c) = '1') else rdata_align;
 
 
   -- Data Access Arbiter --------------------------------------------------------------------
@@ -304,7 +308,6 @@ begin
       d_arbiter.rd_req    <= '0';
       d_arbiter.err_align <= '0';
       d_arbiter.err_bus   <= '0';
-      d_arbiter.timeout   <= (others => '0');
     elsif rising_edge(clk_i) then
       -- data access request --
       if (d_arbiter.wr_req = '0') and (d_arbiter.rd_req = '0') then -- idle
@@ -312,12 +315,10 @@ begin
         d_arbiter.rd_req    <= ctrl_i(ctrl_bus_rd_c);
         d_arbiter.err_align <= d_misaligned;
         d_arbiter.err_bus   <= '0';
-        d_arbiter.timeout   <= std_ulogic_vector(to_unsigned(BUS_TIMEOUT, index_size_f(BUS_TIMEOUT)));
       else -- in progress
-        d_arbiter.timeout   <= std_ulogic_vector(unsigned(d_arbiter.timeout) - 1);
         d_arbiter.err_align <= (d_arbiter.err_align or d_misaligned) and (not ctrl_i(ctrl_bus_derr_ack_c));
-        d_arbiter.err_bus   <= (d_arbiter.err_bus   or (not or_all_f(d_arbiter.timeout)) or d_bus_err_i or 
-                                (st_pmp_fault and d_arbiter.wr_req) or (ld_pmp_fault and d_arbiter.rd_req)) and (not ctrl_i(ctrl_bus_derr_ack_c));
+        d_arbiter.err_bus   <= (d_arbiter.err_bus or d_bus_err_i or (st_pmp_fault and d_arbiter.wr_req) or (ld_pmp_fault and d_arbiter.rd_req)) and
+                               (not ctrl_i(ctrl_bus_derr_ack_c));
         if (d_bus_ack_i = '1') or (ctrl_i(ctrl_bus_derr_ack_c) = '1') then -- wait for normal termination / CPU abort
           d_arbiter.wr_req <= '0';
           d_arbiter.rd_req <= '0';
@@ -325,9 +326,6 @@ begin
       end if;
     end if;
   end process data_access_arbiter;
-
-  -- cancel bus access --
-  d_bus_cancel_o <= (d_arbiter.wr_req or d_arbiter.rd_req) and ctrl_i(ctrl_bus_derr_ack_c);
 
   -- wait for bus transaction to finish --
   d_wait_o <= (d_arbiter.wr_req or d_arbiter.rd_req) and (not d_bus_ack_i);
@@ -348,7 +346,6 @@ begin
   d_bus_re_o    <= d_bus_re_buf when (PMP_NUM_REGIONS > pmp_num_regions_critical_c) else d_bus_re;
   d_bus_fence_o <= ctrl_i(ctrl_bus_fence_c);
   d_bus_rdata   <= d_bus_rdata_i;
-  d_bus_excl_o  <= ctrl_i(ctrl_bus_excl_c);
 
   -- additional register stage for control signals if using PMP_NUM_REGIONS > pmp_num_regions_critical_c --
   pmp_dbus_buffer: process(rstn_i, clk_i)
@@ -362,23 +359,36 @@ begin
     end if;
   end process pmp_dbus_buffer;
 
-  -- Atomic memory access - status buffer --
-  atomic_access_status: process(rstn_i, clk_i)
+
+  -- Reservation Controller (LR/SC [A extension]) -------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  exclusive_access_controller: process(rstn_i, clk_i)
   begin
     if (rstn_i = '0') then
-      bus_excl_ok_o <= '0';
+      exclusive_lock <= '0';
     elsif rising_edge(clk_i) then
       if (CPU_EXTENSION_RISCV_A = true) then
-        if (d_bus_ack_i = '1') then
-          bus_excl_ok_o <= d_bus_excl_i; -- set if access was exclusive
-        elsif (d_arbiter.rd_req = '0') and (d_arbiter.wr_req = '0') then -- bus access done
-          bus_excl_ok_o <= '0';
+        if (ctrl_i(ctrl_trap_c) = '1') or (ctrl_i(ctrl_bus_de_lock_c) = '1') then -- remove lock if entering a trap or executing a non-load-reservate memory access
+          exclusive_lock <= '0';
+        elsif (ctrl_i(ctrl_bus_lock_c) = '1') then -- set new lock
+          exclusive_lock <= '1';
         end if;
       else
-        bus_excl_ok_o <= '0';
+        exclusive_lock <= '0';
       end if;
     end if;
-  end process atomic_access_status;
+  end process exclusive_access_controller;
+
+  -- lock status for SC operation --
+  exclusive_lock_status(data_width_c-1 downto 1) <= (others => '0');
+  exclusive_lock_status(0) <= not exclusive_lock;
+
+  -- output reservation status to control unit (to check if SC should write at all) --
+  excl_state_o <= exclusive_lock;
+
+  -- output to memory system --
+  i_bus_lock_o <= '0'; -- instruction fetches cannot be lockes
+  d_bus_lock_o <= exclusive_lock;
 
 
   -- Instruction Fetch Arbiter --------------------------------------------------------------
@@ -389,18 +399,15 @@ begin
       i_arbiter.rd_req    <= '0';
       i_arbiter.err_align <= '0';
       i_arbiter.err_bus   <= '0';
-      i_arbiter.timeout   <= (others => '0');
     elsif rising_edge(clk_i) then
       -- instruction fetch request --
       if (i_arbiter.rd_req = '0') then -- idle
         i_arbiter.rd_req    <= ctrl_i(ctrl_bus_if_c);
         i_arbiter.err_align <= i_misaligned;
         i_arbiter.err_bus   <= '0';
-        i_arbiter.timeout   <= std_ulogic_vector(to_unsigned(BUS_TIMEOUT, index_size_f(BUS_TIMEOUT)));
-      else -- in progress
-        i_arbiter.timeout   <= std_ulogic_vector(unsigned(i_arbiter.timeout) - 1);
-        i_arbiter.err_align <= (i_arbiter.err_align or i_misaligned)                                                     and (not ctrl_i(ctrl_bus_ierr_ack_c));
-        i_arbiter.err_bus   <= (i_arbiter.err_bus   or (not or_all_f(i_arbiter.timeout)) or i_bus_err_i or if_pmp_fault) and (not ctrl_i(ctrl_bus_ierr_ack_c));
+      else -- in progres
+        i_arbiter.err_align <= (i_arbiter.err_align or i_misaligned) and (not ctrl_i(ctrl_bus_ierr_ack_c));
+        i_arbiter.err_bus   <= (i_arbiter.err_bus or i_bus_err_i or if_pmp_fault) and (not ctrl_i(ctrl_bus_ierr_ack_c));
         if (i_bus_ack_i = '1') or (ctrl_i(ctrl_bus_ierr_ack_c) = '1') then -- wait for normal termination / CPU abort
           i_arbiter.rd_req <= '0';
         end if;
@@ -409,9 +416,6 @@ begin
   end process ifetch_arbiter;
 
   i_arbiter.wr_req <= '0'; -- instruction fetch is read-only
-
-  -- cancel bus access --
-  i_bus_cancel_o <= i_arbiter.rd_req and ctrl_i(ctrl_bus_ierr_ack_c);
 
   -- wait for bus transaction to finish --
   i_wait_o <= i_arbiter.rd_req and (not i_bus_ack_i);
@@ -475,12 +479,13 @@ begin
   end generate; -- r
 
 
-  -- check access type and regions's permissions --
+  -- check access type and region's permissions --
   pmp_check_permission: process(pmp, pmp_ctrl_i, ctrl_i)
   begin
     for r in 0 to PMP_NUM_REGIONS-1 loop -- iterate over all regions
       if ((ctrl_i(ctrl_priv_lvl_msb_c downto ctrl_priv_lvl_lsb_c) = priv_mode_u_c) or (pmp_ctrl_i(r)(pmp_cfg_l_c) = '1')) and -- user privilege level or locked pmp entry -> enforce permissions also for machine mode
-         (pmp_ctrl_i(r)(pmp_cfg_ah_c downto pmp_cfg_al_c) /= pmp_off_mode_c) then -- active entry
+         (pmp_ctrl_i(r)(pmp_cfg_ah_c downto pmp_cfg_al_c) /= pmp_off_mode_c) and -- active entry
+         (ctrl_i(ctrl_debug_running_c) = '0') then -- disable PMP checks when in debug mode
         pmp.if_fault(r) <= pmp.i_match(r) and (not pmp_ctrl_i(r)(pmp_cfg_x_c)); -- fetch access match no execute permission
         pmp.ld_fault(r) <= pmp.d_match(r) and (not pmp_ctrl_i(r)(pmp_cfg_r_c)); -- load access match no read permission
         pmp.st_fault(r) <= pmp.d_match(r) and (not pmp_ctrl_i(r)(pmp_cfg_w_c)); -- store access match no write permission
@@ -494,9 +499,9 @@ begin
 
 
   -- final PMP access fault signals --
-  if_pmp_fault <= or_all_f(pmp.if_fault) when (PMP_NUM_REGIONS > 0) else '0';
-  ld_pmp_fault <= or_all_f(pmp.ld_fault) when (PMP_NUM_REGIONS > 0) else '0';
-  st_pmp_fault <= or_all_f(pmp.st_fault) when (PMP_NUM_REGIONS > 0) else '0';
+  if_pmp_fault <= or_reduce_f(pmp.if_fault) when (PMP_NUM_REGIONS > 0) else '0';
+  ld_pmp_fault <= or_reduce_f(pmp.ld_fault) when (PMP_NUM_REGIONS > 0) else '0';
+  st_pmp_fault <= or_reduce_f(pmp.st_fault) when (PMP_NUM_REGIONS > 0) else '0';
 
 
 end neorv32_cpu_bus_rtl;
