@@ -68,6 +68,8 @@ enum NEORV32_CSR_enum {
   CSR_MTVEC          = 0x305, /**< 0x305 - mtvec      (r/w): Machine trap-handler base address (for ALL traps) */
   CSR_MCOUNTEREN     = 0x306, /**< 0x305 - mcounteren (r/w): Machine counter enable register (controls access rights from U-mode) */
 
+  CSR_MSTATUSH       = 0x310, /**< 0x310 - mstatush (r/h): Machine status register - high word */
+
   CSR_MCOUNTINHIBIT  = 0x320, /**< 0x320 - mcountinhibit (r/w): Machine counter-inhibit register */
 
   CSR_MHPMEVENT3     = 0x323, /**< 0x323 - mhpmevent3  (r/w): Machine hardware performance monitor event selector 3  */
@@ -262,12 +264,11 @@ enum NEORV32_CSR_enum {
   CSR_TIMEH          = 0xc81, /**< 0xc81 - timeh    (r/-): Timer high word (from MTIME.TIME_HI) */
   CSR_INSTRETH       = 0xc82, /**< 0xc82 - instreth (r/-): Instructions-retired counter high word (from MINSTRETH) */
 
-  CSR_MVENDORID      = 0xf11, /**< 0xf11 - mvendorid (r/-): Vendor ID */
-  CSR_MARCHID        = 0xf12, /**< 0xf12 - marchid   (r/-): Architecture ID */
-  CSR_MIMPID         = 0xf13, /**< 0xf13 - mimpid    (r/-): Implementation ID/version */
-  CSR_MHARTID        = 0xf14, /**< 0xf14 - mhartid   (r/-): Hardware thread ID (always 0) */
-
-  CSR_MZEXT          = 0xfc0  /**< 0xfc0 - mzext (custom CSR) (r/-): Available Z* CPU extensions */
+  CSR_MVENDORID      = 0xf11, /**< 0xf11 - mvendorid  (r/-): Vendor ID */
+  CSR_MARCHID        = 0xf12, /**< 0xf12 - marchid    (r/-): Architecture ID */
+  CSR_MIMPID         = 0xf13, /**< 0xf13 - mimpid     (r/-): Implementation ID/version */
+  CSR_MHARTID        = 0xf14, /**< 0xf14 - mhartid    (r/-): Hardware thread ID (always 0) */
+  CSR_MCONFIGPTR     = 0xf15  /**< 0xf15 - mconfigptr (r/-): Machine configuration pointer register */
 };
 
 
@@ -278,7 +279,8 @@ enum NEORV32_CSR_MSTATUS_enum {
   CSR_MSTATUS_MIE   =  3, /**< CPU mstatus CSR  (3): MIE - Machine interrupt enable bit (r/w) */
   CSR_MSTATUS_MPIE  =  7, /**< CPU mstatus CSR  (7): MPIE - Machine previous interrupt enable bit (r/w) */
   CSR_MSTATUS_MPP_L = 11, /**< CPU mstatus CSR (11): MPP_L - Machine previous privilege mode bit low (r/w) */
-  CSR_MSTATUS_MPP_H = 12  /**< CPU mstatus CSR (12): MPP_H - Machine previous privilege mode bit high (r/w) */
+  CSR_MSTATUS_MPP_H = 12, /**< CPU mstatus CSR (12): MPP_H - Machine previous privilege mode bit high (r/w) */
+  CSR_MSTATUS_TW    = 21, /**< CPU mstatus CSR (21): TW - timeout wait (trigger illegal instruction exception if WFI is executed outside of m-mode when set) (r/w) */
 };
 
 
@@ -401,22 +403,6 @@ enum NEORV32_CSR_MISA_enum {
   CSR_MISA_X      = 23, /**< CPU misa CSR (23): X: Non-standard CPU extension available (r/-) */
   CSR_MISA_MXL_LO = 30, /**< CPU misa CSR (30): MXL.lo: CPU data width (r/-) */
   CSR_MISA_MXL_HI = 31  /**< CPU misa CSR (31): MXL.Hi: CPU data width (r/-) */
-};
-
-
-/**********************************************************************//**
- * CPU <b>mzext</b> custom CSR (r/-): Implemented Z* CPU extensions
- **************************************************************************/
-enum NEORV32_CSR_MZEXT_enum {
-  CSR_MZEXT_ZICSR     =  0, /**< CPU mzext CSR (0): Zicsr extension (I sub-extension) available when set (r/-) */
-  CSR_MZEXT_ZIFENCEI  =  1, /**< CPU mzext CSR (1): Zifencei extension (I sub-extension) available when set (r/-) */
-
-  CSR_MZEXT_ZFINX     =  5, /**< CPU mzext CSR (5): Zfinx extension (F sub-/alternative-extension) available when set (r/-) */
-  CSR_MZEXT_ZXSCNT    =  6, /**< CPU mzext CSR (6): Custom extension - Small CPU counters: "cycle" & "instret" CSRs have less than 64-bit when set (r/-) */
-  CSR_MZEXT_ZXNOCNT   =  7, /**< CPU mzext CSR (7): Custom extension - NO CPU counters: "cycle" & "instret" CSRs are NOT available at all when set (r/-) */
-  CSR_MZEXT_PMP       =  8, /**< CPU mzext CSR (8): PMP (physical memory protection) extension available when set (r/-) */
-  CSR_MZEXT_HPM       =  9, /**< CPU mzext CSR (9): HPM (hardware performance monitors) extension available when set (r/-) */
-  CSR_MZEXT_DEBUGMODE = 10  /**< CPU mzext CSR (10): RISC-V CPU debug mode available when set (r/-) */
 };
 
 
@@ -675,68 +661,118 @@ enum NEORV32_PWM_CT_enum {
 
 
 /**********************************************************************//**
- * @name IO Device: General Purpose Input/Output Port Unit (GPIO)
+ * @name IO Device: Stream link interface (SLINK)
  **************************************************************************/
 /**@{*/
-/** GPIO base address */
-#define GPIO_BASE (0xFFFFFF80UL) // /**< GPIO base address */
-/** GPIO address space size in bytes */
-#define GPIO_SIZE (2*4) // /**< GPIO address space size in bytes */
+/** SLINK base address */
+#define SLINK_BASE (0xFFFFFEC0UL) // /**< SLINK base address */
+/** SLINK address space size in bytes */
+#define SLINK_SIZE (16*4) // /**< SLINK address space size in bytes */
 
-/** read access: GPIO parallel input port 32-bit (r/-), write_access: pin-change IRQ for each input pin (-/w) */
-#define GPIO_INPUT  (*(IO_REG32 (GPIO_BASE + 0)))
-/** GPIO parallel output port 32-bit (r/w) */
-#define GPIO_OUTPUT (*(IO_REG32 (GPIO_BASE + 4)))
-/**@}*/
+/** SLINK control register (r/w) */
+#define SLINK_CT     (*(IO_REG32 (SLINK_BASE + 0))) // r/w: control register
+/** SLINK status register (r/-) */
+#define SLINK_STATUS (*(IO_ROM32 (SLINK_BASE + 16))) // r/-: status register
+/** stream link 0 (r/w) */
+#define SLINK_CH0    (*(IO_REG32 (SLINK_BASE + 32 + 0))) // r/w: link 0
+/** stream link 1 (r/w) */
+#define SLINK_CH1    (*(IO_REG32 (SLINK_BASE + 32 + 4))) // r/w: link 1
+/** stream link 2 (r/w) */
+#define SLINK_CH2    (*(IO_REG32 (SLINK_BASE + 32 + 8))) // r/w: link 2
+/** stream link 3 (r/w) */
+#define SLINK_CH3    (*(IO_REG32 (SLINK_BASE + 32 + 12))) // r/w: link 3
+/** stream link 4 (r/w) */
+#define SLINK_CH4    (*(IO_REG32 (SLINK_BASE + 32 + 16))) // r/w: link 4
+/** stream link 5 (r/w) */
+#define SLINK_CH5    (*(IO_REG32 (SLINK_BASE + 32 + 20))) // r/w: link 5
+/** stream link 6 (r/w) */
+#define SLINK_CH6    (*(IO_REG32 (SLINK_BASE + 32 + 24))) // r/w: link 6
+/** stream link 7 (r/w) */
+#define SLINK_CH7    (*(IO_REG32 (SLINK_BASE + 32 + 28))) // r/w: link 7
 
+/** SLINK control register bits */
+enum NEORV32_SLINK_CT_enum {
+  SLINK_CT_RX_NUM0    =  0, /**< SLINK control register(0) (r/-): number of implemented RX links bit 0 */
+  SLINK_CT_RX_NUM1    =  1, /**< SLINK control register(1) (r/-): number of implemented RX links bit 1 */
+  SLINK_CT_RX_NUM2    =  2, /**< SLINK control register(2) (r/-): number of implemented RX links bit 2 */
+  SLINK_CT_RX_NUM3    =  3, /**< SLINK control register(3) (r/-): number of implemented RX links bit 3 */
 
-/**********************************************************************//**
- * @name IO Device: True Random Number Generator (TRNG)
- **************************************************************************/
-/**@{*/
-/** TRNG base address */
-#define TRNG_BASE (0xFFFFFF88UL) // /**< TRNG base address */
-/** TRNG address space size in bytes */
-#define TRNG_SIZE (1*4) // /**< TRNG address space size in bytes */
+  SLINK_CT_TX_NUM0    =  4, /**< SLINK control register(4) (r/-): number of implemented TX links bit 0 */
+  SLINK_CT_TX_NUM1    =  5, /**< SLINK control register(5) (r/-): number of implemented TX links bit 1 */
+  SLINK_CT_TX_NUM2    =  6, /**< SLINK control register(6) (r/-): number of implemented TX links bit 2 */
+  SLINK_CT_TX_NUM3    =  7, /**< SLINK control register(7) (r/-): number of implemented TX links bit 3 */
 
-/** TRNG control/data register (r/w) */
-#define TRNG_CT (*(IO_REG32 (TRNG_BASE + 0)))
+  SLINK_CT_RX_FIFO_S0 =  8, /**< SLINK control register( 8) (r/-): log2(RX FIFO size) bit 0 */
+  SLINK_CT_RX_FIFO_S1 =  9, /**< SLINK control register( 9) (r/-): log2(RX FIFO size) bit 1 */
+  SLINK_CT_RX_FIFO_S2 = 10, /**< SLINK control register(10) (r/-): log2(RX FIFO size) bit 2 */
+  SLINK_CT_RX_FIFO_S3 = 11, /**< SLINK control register(11) (r/-): log2(RX FIFO size) bit 3 */
 
-/** TRNG control/data register bits */
-enum NEORV32_TRNG_CT_enum {
-  TRNG_CT_DATA_LSB =  0, /**< TRNG data/control register(0)  (r/-): Random data byte LSB */
-  TRNG_CT_DATA_MSB =  7, /**< TRNG data/control register(7)  (r/-): Random data byte MSB */
+  SLINK_CT_TX_FIFO_S0 = 12, /**< SLINK control register(12) (r/-): log2(TX FIFO size) bit 0 */
+  SLINK_CT_TX_FIFO_S1 = 13, /**< SLINK control register(13) (r/-): log2(TX FIFO size) bit 1 */
+  SLINK_CT_TX_FIFO_S2 = 14, /**< SLINK control register(14) (r/-): log2(TX FIFO size) bit 2 */
+  SLINK_CT_TX_FIFO_S3 = 15, /**< SLINK control register(15) (r/-): log2(TX FIFO size) bit 3 */
 
-  TRNG_CT_EN       = 30, /**< TRNG data/control register(30) (r/w): TRNG enable */
-  TRNG_CT_VALID    = 31  /**< TRNG data/control register(31) (r/-): Random data output valid */
+  SLINK_CT_EN         = 31, /**< SLINK control register(0) (r/w): SLINK controller enable */
+};
+
+/** SLINK status register bits */
+enum NEORV32_SLINK_STATUS_enum {
+  SLINK_STATUS_RX0_AVAIL =  0, /**< SLINK status register(0) (r/-): RX link 0 data available */
+  SLINK_STATUS_RX1_AVAIL =  1, /**< SLINK status register(1) (r/-): RX link 1 data available */
+  SLINK_STATUS_RX2_AVAIL =  2, /**< SLINK status register(2) (r/-): RX link 2 data available */
+  SLINK_STATUS_RX3_AVAIL =  3, /**< SLINK status register(3) (r/-): RX link 3 data available */
+  SLINK_STATUS_RX4_AVAIL =  4, /**< SLINK status register(4) (r/-): RX link 4 data available */
+  SLINK_STATUS_RX5_AVAIL =  5, /**< SLINK status register(5) (r/-): RX link 5 data available */
+  SLINK_STATUS_RX6_AVAIL =  6, /**< SLINK status register(6) (r/-): RX link 6 data available */
+  SLINK_STATUS_RX7_AVAIL =  7, /**< SLINK status register(7) (r/-): RX link 7 data available */
+
+  SLINK_STATUS_TX0_FREE  =  8, /**< SLINK status register(8)  (r/-): TX link 0 ready to send */
+  SLINK_STATUS_TX1_FREE  =  9, /**< SLINK status register(9)  (r/-): TX link 1 ready to send */
+  SLINK_STATUS_TX2_FREE  = 10, /**< SLINK status register(10) (r/-): TX link 2 ready to send */
+  SLINK_STATUS_TX3_FREE  = 11, /**< SLINK status register(11) (r/-): TX link 3 ready to send */
+  SLINK_STATUS_TX4_FREE  = 12, /**< SLINK status register(12) (r/-): TX link 4 ready to send */
+  SLINK_STATUS_TX5_FREE  = 13, /**< SLINK status register(13) (r/-): TX link 5 ready to send */
+  SLINK_STATUS_TX6_FREE  = 14, /**< SLINK status register(14) (r/-): TX link 6 ready to send */
+  SLINK_STATUS_TX7_FREE  = 15, /**< SLINK status register(15) (r/-): TX link 7 ready to send */
+
+  SLINK_STATUS_RX0_HALF  = 16, /**< SLINK status register(16) (r/-): RX link 0 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX1_HALF  = 17, /**< SLINK status register(17) (r/-): RX link 1 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX2_HALF  = 18, /**< SLINK status register(18) (r/-): RX link 2 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX3_HALF  = 19, /**< SLINK status register(19) (r/-): RX link 3 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX4_HALF  = 20, /**< SLINK status register(20) (r/-): RX link 4 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX5_HALF  = 21, /**< SLINK status register(21) (r/-): RX link 5 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX6_HALF  = 22, /**< SLINK status register(22) (r/-): RX link 6 FIFO fill level is >= half-full */
+  SLINK_STATUS_RX7_HALF  = 23, /**< SLINK status register(23) (r/-): RX link 7 FIFO fill level is >= half-full */
+
+  SLINK_STATUS_TX0_HALF  = 24, /**< SLINK status register(24) (r/-): TX link 0 FIFO fill level is > half-full */
+  SLINK_STATUS_TX1_HALF  = 25, /**< SLINK status register(25) (r/-): TX link 1 FIFO fill level is > half-full */
+  SLINK_STATUS_TX2_HALF  = 26, /**< SLINK status register(26) (r/-): TX link 2 FIFO fill level is > half-full */
+  SLINK_STATUS_TX3_HALF  = 27, /**< SLINK status register(27) (r/-): TX link 3 FIFO fill level is > half-full */
+  SLINK_STATUS_TX4_HALF  = 28, /**< SLINK status register(28) (r/-): TX link 4 FIFO fill level is > half-full */
+  SLINK_STATUS_TX5_HALF  = 29, /**< SLINK status register(29) (r/-): TX link 5 FIFO fill level is > half-full */
+  SLINK_STATUS_TX6_HALF  = 30, /**< SLINK status register(30) (r/-): TX link 6 FIFO fill level is > half-full */
+  SLINK_STATUS_TX7_HALF  = 31  /**< SLINK status register(31) (r/-): TX link 7 FIFO fill level is > half-full */
 };
 /**@}*/
 
 
 /**********************************************************************//**
- * @name IO Device: Watchdog Timer (WDT)
+ * @name IO Device: External Interrupt Controller (XIRQ)
  **************************************************************************/
 /**@{*/
-/** WDT base address */
-#define WDT_BASE (0xFFFFFF8CUL) // /**< WDT base address */
-/** WDT address space size in bytes */
-#define WDT_SIZE (1*4) // /**< WDT address space size in bytes */
+/** XIRQ base address */
+#define XIRQ_BASE (0xFFFFFF80UL) // /**< XIRQ base address */
+/** XIRQ address space size in bytes */
+#define XIRQ_SIZE (4*4) // /**< XIRQ address space size in bytes */
 
-/** Watchdog control register (r/w) */
-#define WDT_CT (*(IO_REG32 (WDT_BASE + 0)))
-
-/** WTD control register bits */
-enum NEORV32_WDT_CT_enum {
-  WDT_CT_EN       = 0, /**< WDT control register(0) (r/w): Watchdog enable */
-  WDT_CT_CLK_SEL0 = 1, /**< WDT control register(1) (r/w): Clock prescaler select bit 0 */
-  WDT_CT_CLK_SEL1 = 2, /**< WDT control register(2) (r/w): Clock prescaler select bit 1 */
-  WDT_CT_CLK_SEL2 = 3, /**< WDT control register(3) (r/w): Clock prescaler select bit 2 */
-  WDT_CT_MODE     = 4, /**< WDT control register(4) (r/w): Watchdog mode: 0=timeout causes interrupt, 1=timeout causes processor reset */
-  WDT_CT_RCAUSE   = 5, /**< WDT control register(5) (r/-): Cause of last system reset: 0=external reset, 1=watchdog */
-  WDT_CT_RESET    = 6, /**< WDT control register(6) (-/w): Reset WDT counter when set, auto-clears */
-  WDT_CT_FORCE    = 7, /**< WDT control register(7) (-/w): Force WDT action, auto-clears */
-  WDT_CT_LOCK     = 8  /**< WDT control register(8) (r/w): Lock write access to control register, clears on reset (HW or WDT) only */
-};
+/** XIRQ IRQ input enable register (r/w) */
+#define XIRQ_IER (*(IO_REG32 (XIRQ_BASE + 0)))
+/** XIRQ pending IRQ register /ack/clear (r/w) */
+#define XIRQ_IPR (*(IO_REG32 (XIRQ_BASE + 4)))
+/** EXTIRW  (time compare register) low word (r/w) */
+#define XIRQ_SCR (*(IO_REG32 (XIRQ_BASE + 8)))
+// reserved
+//#define XIRQ_reserved (*(IO_REG32 (XIRQ_BASE + 12)))
 /**@}*/
 
 
@@ -922,63 +958,77 @@ enum NEORV32_TWI_DATA_enum {
 
 
 /**********************************************************************//**
- * @name IO Device: Numerically-Controlled Oscillator (NCO)
+ * @name IO Device: True Random Number Generator (TRNG)
  **************************************************************************/
 /**@{*/
-/** NCO base address */
-#define NCO_BASE (0xFFFFFFC0UL) // /**< NCO base address */
-/** NCO address space size in bytes */
-#define NCO_SIZE (4*4) // /**< NCO address space size in bytes */
+/** TRNG base address */
+#define TRNG_BASE (0xFFFFFFB8UL) // /**< TRNG base address */
+/** TRNG address space size in bytes */
+#define TRNG_SIZE (1*4) // /**< TRNG address space size in bytes */
 
-/** NCO control register (r/w) */
-#define NCO_CT       (*(IO_REG32 (NCO_BASE + 0))) // r/w: control register
-/** NCO channel 0 tuning word (r/w) */
-#define NCO_TUNE_CH0 (*(IO_REG32 (NCO_BASE + 4))) // r/w: tuning word channel 0
-/** NCO channel 1 tuning word (r/w) */
-#define NCO_TUNE_CH1 (*(IO_REG32 (NCO_BASE + 8))) // r/w: tuning word channel 1
-/** NCO channel 2 tuning word (r/w) */
-#define NCO_TUNE_CH2 (*(IO_REG32 (NCO_BASE + 12))) // r/w: tuning word channel 2
+/** TRNG control/data register (r/w) */
+#define TRNG_CT (*(IO_REG32 (TRNG_BASE + 0)))
 
-/** NCO control register bits */
-enum NEORV32_NCO_CT_enum {
-  NCO_CT_EN           =  0, /**< NCO control register(0) (r/w): NCO global enable */
-  // channel 0
-  NCO_CT_CH0_MODE     =  1, /**< NCO control register(1)  - channel 0 (r/w): Output mode (0=fixed 50% duty cycle; 1=pulse mode) */
-  NCO_CT_CH0_IDLE_POL =  2, /**< NCO control register(2)  - channel 0 (r/w): Output idle polarity (0=low, 1=high) */
-  NCO_CT_CH0_OE       =  3, /**< NCO control register(3)  - channel 0 (r/w): Enable processor output pin */
-  NCO_CT_CH0_OUTPUT   =  4, /**< NCO control register(4)  - channel 0 (r/-): Current channel output state */
-  NCO_CT_CH0_PRSC0    =  5, /**< NCO control register(5)  - channel 0 (r/w): Clock prescaler select bit 0 */
-  NCO_CT_CH0_PRSC1    =  6, /**< NCO control register(6)  - channel 0 (r/w): Clock prescaler select bit 1 */
-  NCO_CT_CH0_PRSC2    =  7, /**< NCO control register(7)  - channel 0 (r/w): Clock prescaler select bit 2 */
-  NCO_CT_CH0_PULSE0   =  8, /**< NCO control register(8)  - channel 0 (r/w): Pulse-mode: Pulse length select bit 0 */
-  NCO_CT_CH0_PULSE1   =  9, /**< NCO control register(9)  - channel 0 (r/w): Pulse-mode: Pulse length select bit 1 */
-  NCO_CT_CH0_PULSE2   = 10, /**< NCO control register(10) - channel 0 (r/w): Pulse-mode: Pulse length select bit 2 */
-  // channel 1
-  NCO_CT_CH1_MODE     = 11, /**< NCO control register(11) - channel 1 (r/w): Output mode (0=fixed 50% duty cycle; 1=pulse mode) */
-  NCO_CT_CH1_IDLE_POL = 12, /**< NCO control register(12) - channel 1 (r/w): Output idle polarity (0=low, 1=high) */
-  NCO_CT_CH1_OE       = 13, /**< NCO control register(13) - channel 1 (r/w): Enable processor output pin */
-  NCO_CT_CH1_OUTPUT   = 14, /**< NCO control register(14) - channel 1 (r/-): Current channel output state */
-  NCO_CT_CH1_PRSC0    = 15, /**< NCO control register(15) - channel 1 (r/w): Clock prescaler select bit 0 */
-  NCO_CT_CH1_PRSC1    = 16, /**< NCO control register(16) - channel 1 (r/w): Clock prescaler select bit 1 */
-  NCO_CT_CH1_PRSC2    = 17, /**< NCO control register(17) - channel 1 (r/w): Clock prescaler select bit 2 */
-  NCO_CT_CH1_PULSE0   = 18, /**< NCO control register(18) - channel 1 (r/w): Pulse-mode: Pulse length select bit 0 */
-  NCO_CT_CH1_PULSE1   = 19, /**< NCO control register(19) - channel 1 (r/w): Pulse-mode: Pulse length select bit 1 */
-  NCO_CT_CH1_PULSE2   = 20, /**< NCO control register(20) - channel 1 (r/w): Pulse-mode: Pulse length select bit 2 */
-  // channel 2
-  NCO_CT_CH2_MODE     = 21, /**< NCO control register(21) - channel 2 (r/w): Output mode (0=fixed 50% duty cycle; 1=pulse mode) */
-  NCO_CT_CH2_IDLE_POL = 22, /**< NCO control register(22) - channel 2 (r/w): Output idle polarity (0=low, 1=high) */
-  NCO_CT_CH2_OE       = 23, /**< NCO control register(23) - channel 2 (r/w): Enable processor output pin */
-  NCO_CT_CH2_OUTPUT   = 24, /**< NCO control register(24) - channel 2 (r/-): Current channel output state */
-  NCO_CT_CH2_PRSC0    = 25, /**< NCO control register(25) - channel 2 (r/w): Clock prescaler select bit 0 */
-  NCO_CT_CH2_PRSC1    = 26, /**< NCO control register(26) - channel 2 (r/w): Clock prescaler select bit 1 */
-  NCO_CT_CH2_PRSC2    = 27, /**< NCO control register(27) - channel 2 (r/w): Clock prescaler select bit 2 */
-  NCO_CT_CH2_PULSE0   = 28, /**< NCO control register(28) - channel 2 (r/w): Pulse-mode: Pulse length select bit 0 */
-  NCO_CT_CH2_PULSE1   = 29, /**< NCO control register(29) - channel 2 (r/w): Pulse-mode: Pulse length select bit 1 */
-  NCO_CT_CH2_PULSE2   = 20  /**< NCO control register(30) - channel 2 (r/w): Pulse-mode: Pulse length select bit 2 */
+/** TRNG control/data register bits */
+enum NEORV32_TRNG_CT_enum {
+  TRNG_CT_DATA_LSB =  0, /**< TRNG data/control register(0)  (r/-): Random data byte LSB */
+  TRNG_CT_DATA_MSB =  7, /**< TRNG data/control register(7)  (r/-): Random data byte MSB */
+
+  TRNG_CT_EN       = 30, /**< TRNG data/control register(30) (r/w): TRNG enable */
+  TRNG_CT_VALID    = 31  /**< TRNG data/control register(31) (r/-): Random data output valid */
 };
+/**@}*/
 
-/** Size of one "channel entry" in control register in bits */
-#define NCO_CHX_WIDTH 10 // Size of one "channel entry" in control register in bits
+
+/**********************************************************************//**
+ * @name IO Device: Watchdog Timer (WDT)
+ **************************************************************************/
+/**@{*/
+/** WDT base address */
+#define WDT_BASE (0xFFFFFFBCUL) // /**< WDT base address */
+/** WDT address space size in bytes */
+#define WDT_SIZE (1*4) // /**< WDT address space size in bytes */
+
+/** Watchdog control register (r/w) */
+#define WDT_CT (*(IO_REG32 (WDT_BASE + 0)))
+
+/** WTD control register bits */
+enum NEORV32_WDT_CT_enum {
+  WDT_CT_EN       = 0, /**< WDT control register(0) (r/w): Watchdog enable */
+  WDT_CT_CLK_SEL0 = 1, /**< WDT control register(1) (r/w): Clock prescaler select bit 0 */
+  WDT_CT_CLK_SEL1 = 2, /**< WDT control register(2) (r/w): Clock prescaler select bit 1 */
+  WDT_CT_CLK_SEL2 = 3, /**< WDT control register(3) (r/w): Clock prescaler select bit 2 */
+  WDT_CT_MODE     = 4, /**< WDT control register(4) (r/w): Watchdog mode: 0=timeout causes interrupt, 1=timeout causes processor reset */
+  WDT_CT_RCAUSE   = 5, /**< WDT control register(5) (r/-): Cause of last system reset: 0=external reset, 1=watchdog */
+  WDT_CT_RESET    = 6, /**< WDT control register(6) (-/w): Reset WDT counter when set, auto-clears */
+  WDT_CT_FORCE    = 7, /**< WDT control register(7) (-/w): Force WDT action, auto-clears */
+  WDT_CT_LOCK     = 8  /**< WDT control register(8) (r/w): Lock write access to control register, clears on reset (HW or WDT) only */
+};
+/**@}*/
+
+
+/**********************************************************************//**
+ * @name IO Device: General Purpose Input/Output Port Unit (GPIO)
+ **************************************************************************/
+/**@{*/
+/** GPIO base address */
+#define GPIO_BASE (0xFFFFFFC0UL) // /**< GPIO base address */
+/** GPIO address space size in bytes */
+#define GPIO_SIZE (4*4) // /**< GPIO address space size in bytes */
+
+/** GPIO parallel input port lower 32-bit (r/-) */
+#define GPIO_INPUT_LO  (*(IO_ROM32 (GPIO_BASE +  0)))
+/** GPIO parallel input port upper 32-bit (r/-) */
+#define GPIO_INPUT_HI  (*(IO_ROM32 (GPIO_BASE +  4)))
+/** GPIO parallel output port lower 32-bit (r/w) */
+#define GPIO_OUTPUT_LO (*(IO_REG32 (GPIO_BASE +  8)))
+/** GPIO parallel output port upper 32-bit (r/w) */
+#define GPIO_OUTPUT_HI (*(IO_REG32 (GPIO_BASE + 12)))
+
+/** GPIO parallel input 64-bit access (r/-) */
+#define GPIO_INPUT  (*(IO_ROM64 (&GPIO_INPUT_LO)))
+/** GPIO parallel output 64-bit access (r/w) */
+#define GPIO_OUTPUT (*(IO_REG64 (&GPIO_OUTPUT_LO)))
 /**@}*/
 
 
@@ -1000,7 +1050,7 @@ enum NEORV32_NCO_CT_enum {
 enum NEORV32_NEOLED_CT_enum {
   NEOLED_CT_EN         =  0, /**< NEOLED control register(0) (r/w): NEOLED global enable */
   NEOLED_CT_MODE       =  1, /**< NEOLED control register(1) (r/w): TX mode (0=24-bit, 1=32-bit) */
-  NEOLED_CT_BSCON      =  2, /**< NEOLED control register(2) (r/w): buffer status configuration -> busy_flag/IRQ config (0=at least one free entry, 1=whole buffer empty) */
+  NEOLED_CT_STROBE     =  2, /**< NEOLED control register(2) (r/w): Strobe (0=send normal data, 1=send RESET command on data write) */
   NEOLED_CT_PRSC0      =  3, /**< NEOLED control register(3) (r/w): Clock prescaler select bit 0 (pulse-clock speed select) */
   NEOLED_CT_PRSC1      =  4, /**< NEOLED control register(4) (r/w): Clock prescaler select bit 1 (pulse-clock speed select) */
   NEOLED_CT_PRSC2      =  5, /**< NEOLED control register(5) (r/w): Clock prescaler select bit 2 (pulse-clock speed select) */
@@ -1028,8 +1078,10 @@ enum NEORV32_NEOLED_CT_enum {
   NEOLED_CT_T_ONE_H_3  = 23, /**< NEOLED control register(23) (r/w): pulse-clock ticks per ONE high-time bit 3 */
   NEOLED_CT_T_ONE_H_4  = 24, /**< NEOLED control register(24) (r/w): pulse-clock ticks per ONE high-time bit 4 */
   //
-  NEOLED_CT_TX_STATUS  = 30, /**< NEOLED control register(30) (r/-): serial transmit engine still busy when set */
-  NEOLED_CT_BUSY       = 31  /**< NEOLED control register(31) (r/-): busy / buffer status flag (configured via #NEOLED_CT_BSCON) */
+  NEOLED_CT_TX_EMPTY   = 28, /**< NEOLED control register(28) (r/-): TX FIFO is empty */
+  NEOLED_CT_TX_HALF    = 29, /**< NEOLED control register(29) (r/-): TX FIFO is at least half-full */
+  NEOLED_CT_TX_FULL    = 30, /**< NEOLED control register(30) (r/-): TX FIFO is full */
+  NEOLED_CT_TX_BUSY    = 31  /**< NEOLED control register(31) (r/-): busy / buffer status flag (configured via #NEOLED_CT_BSCON) */
 };
 /**@}*/
 
@@ -1038,16 +1090,16 @@ enum NEORV32_NEOLED_CT_enum {
  * @name IO Device: System Configuration Info Memory (SYSINFO)
  **************************************************************************/
 /**@{*/
-/** NEOLED base address */
+/** SYSINFO base address */
 #define SYSINFO_BASE (0xFFFFFFE0UL) // /**< SYSINFO base address */
-/** NEOLED address space size in bytes */
+/** SYSINFO address space size in bytes */
 #define SYSINFO_SIZE (8*4) // /**< SYSINFO address space size in bytes */
 
 /** SYSINFO(0): Clock speed */
 #define SYSINFO_CLK         (*(IO_ROM32 (SYSINFO_BASE + 0)))
-/** SYSINFO(1): Custom user code (via "USER_CODE" generic) */
-#define SYSINFO_USER_CODE   (*(IO_ROM32 (SYSINFO_BASE + 4)))
-/** SYSINFO(2): Clock speed */
+/** SYSINFO(1): CPU core features */
+#define SYSINFO_CPU         (*(IO_ROM32 (SYSINFO_BASE + 4)))
+/** SYSINFO(2): Processor/SoC features */
 #define SYSINFO_FEATURES    (*(IO_ROM32 (SYSINFO_BASE + 8)))
 /** SYSINFO(3): Cache configuration */
 #define SYSINFO_CACHE       (*(IO_ROM32 (SYSINFO_BASE + 12)))
@@ -1061,15 +1113,37 @@ enum NEORV32_NEOLED_CT_enum {
 #define SYSINFO_DMEM_SIZE   (*(IO_ROM32 (SYSINFO_BASE + 28)))
 /**@}*/
 
+
+
+/**********************************************************************//**
+ * SYSINFO_CPU (r/-): Implemented CPU sub-extensions/features
+ **************************************************************************/
+enum NEORV32_SYSINFO_CPU_enum {
+  SYSINFO_CPU_ZICSR     =  0, /**< SYSINFO_CPU (0): Zicsr extension (I sub-extension) available when set (r/-) */
+  SYSINFO_CPU_ZIFENCEI  =  1, /**< SYSINFO_CPU (1): Zifencei extension (I sub-extension) available when set (r/-) */
+  SYSINFO_CPU_ZMMUL     =  2, /**< SYSINFO_CPU (2): Zmmul extension (M sub-extension) available when set (r/-) */
+  SYSINFO_CPU_ZBB       =  3, /**< SYSINFO_CPU (3): Zbb extension (B sub-extension) available when set (r/-) */
+
+  SYSINFO_CPU_ZFINX     =  5, /**< SYSINFO_CPU (5): Zfinx extension (F sub-/alternative-extension) available when set (r/-) */
+  SYSINFO_CPU_ZXSCNT    =  6, /**< SYSINFO_CPU (6): Custom extension - Small CPU counters: "cycle" & "instret" CSRs have less than 64-bit when set (r/-) */
+  SYSINFO_CPU_ZXNOCNT   =  7, /**< SYSINFO_CPU (7): Custom extension - NO CPU counters: "cycle" & "instret" CSRs are NOT available at all when set (r/-) */
+  SYSINFO_CPU_PMP       =  8, /**< SYSINFO_CPU (8): PMP (physical memory protection) extension available when set (r/-) */
+  SYSINFO_CPU_HPM       =  9, /**< SYSINFO_CPU (9): HPM (hardware performance monitors) extension available when set (r/-) */
+  SYSINFO_CPU_DEBUGMODE = 10, /**< SYSINFO_CPU (10): RISC-V CPU debug mode available when set (r/-) */
+
+  SYSINFO_CPU_FASTMUL   = 30, /**< SYSINFO_CPU (30): fast multiplications (via FAST_MUL_EN generic) available when set (r/-) */
+  SYSINFO_CPU_FASTSHIFT = 31  /**< SYSINFO_CPU (31): fast shifts (via FAST_SHIFT_EN generic) available when set (r/-) */
+};
+
 /**********************************************************************//**
  * SYSINFO_FEATURES (r/-): Implemented processor devices/features
  **************************************************************************/
- enum NEORV32_SYSINFO_FEATURES_enum {
+enum NEORV32_SYSINFO_FEATURES_enum {
   SYSINFO_FEATURES_BOOTLOADER       =  0, /**< SYSINFO_FEATURES  (0) (r/-): Bootloader implemented when 1 (via INT_BOOTLOADER_EN generic) */
   SYSINFO_FEATURES_MEM_EXT          =  1, /**< SYSINFO_FEATURES  (1) (r/-): External bus interface implemented when 1 (via MEM_EXT_EN generic) */
   SYSINFO_FEATURES_MEM_INT_IMEM     =  2, /**< SYSINFO_FEATURES  (2) (r/-): Processor-internal instruction memory implemented when 1 (via MEM_INT_IMEM_EN generic) */
   SYSINFO_FEATURES_MEM_INT_DMEM     =  3, /**< SYSINFO_FEATURES  (3) (r/-): Processor-internal data memory implemented when 1 (via MEM_INT_DMEM_EN generic) */
-  SYSINFO_FEATURES_MEM_EXT_ENDIAN   =  4, /**< SYSINFO_FEATURES  (4) (r/-): External bus interface uses BIG-endian byte-order when 1 (via package.xbus_big_endian_c constant) */
+  SYSINFO_FEATURES_MEM_EXT_ENDIAN   =  4, /**< SYSINFO_FEATURES  (4) (r/-): External bus interface uses BIG-endian byte-order when 1 (via MEM_EXT_BIG_ENDIAN generic) */
   SYSINFO_FEATURES_ICACHE           =  5, /**< SYSINFO_FEATURES  (5) (r/-): Processor-internal instruction cache implemented when 1 (via ICACHE_EN generic) */
 
   SYSINFO_FEATURES_OCD              = 14, /**< SYSINFO_FEATURES (14) (r/-): On-chip debugger implemented when 1 (via ON_CHIP_DEBUGGER_EN generic) */
@@ -1084,9 +1158,10 @@ enum NEORV32_NEOLED_CT_enum {
   SYSINFO_FEATURES_IO_WDT           = 22, /**< SYSINFO_FEATURES (22) (r/-): Watchdog timer implemented when 1 (via IO_WDT_EN generic) */
   SYSINFO_FEATURES_IO_CFS           = 23, /**< SYSINFO_FEATURES (23) (r/-): Custom functions subsystem implemented when 1 (via IO_CFS_EN generic) */
   SYSINFO_FEATURES_IO_TRNG          = 24, /**< SYSINFO_FEATURES (24) (r/-): True random number generator implemented when 1 (via IO_TRNG_EN generic) */
-  SYSINFO_FEATURES_IO_NCO           = 25, /**< SYSINFO_FEATURES (25) (r/-): Numerically-controlled oscillator implemented when 1 (via IO_NCO_EN generic) */
+  SYSINFO_FEATURES_IO_SLINK         = 25, /**< SYSINFO_FEATURES (25) (r/-): Stream link interface implemented when 1 (via SLINK_NUM_RX & SLINK_NUM_TX generics) */
   SYSINFO_FEATURES_IO_UART1         = 26, /**< SYSINFO_FEATURES (26) (r/-): Secondary universal asynchronous receiver/transmitter 1 implemented when 1 (via IO_UART1_EN generic) */
-  SYSINFO_FEATURES_IO_NEOLED        = 27  /**< SYSINFO_FEATURES (27) (r/-): NeoPixel-compatible smart LED interface implemented when 1 (via IO_NEOLED_EN generic) */
+  SYSINFO_FEATURES_IO_NEOLED        = 27, /**< SYSINFO_FEATURES (27) (r/-): NeoPixel-compatible smart LED interface implemented when 1 (via IO_NEOLED_EN generic) */
+  SYSINFO_FEATURES_IO_XIRQ          = 28  /**< SYSINFO_FEATURES (28) (r/-): External interrupt controller implemented when 1 (via XIRQ_NUM_IO generic) */
 };
 
 /**********************************************************************//**
@@ -1131,14 +1206,15 @@ enum NEORV32_NEOLED_CT_enum {
 #include "neorv32_cfs.h"
 #include "neorv32_gpio.h"
 #include "neorv32_mtime.h"
-#include "neorv32_nco.h"
 #include "neorv32_neoled.h"
 #include "neorv32_pwm.h"
+#include "neorv32_slink.h"
 #include "neorv32_spi.h"
 #include "neorv32_trng.h"
 #include "neorv32_twi.h"
 #include "neorv32_uart.h"
 #include "neorv32_wdt.h"
+#include "neorv32_xirq.h"
 
 
 #ifdef __cplusplus

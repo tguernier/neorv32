@@ -4,16 +4,20 @@
 -- # NEORV32 CPU:                                                                                  #
 -- # * neorv32_cpu.vhd                   - CPU top entity                                          #
 -- #   * neorv32_cpu_alu.vhd             - Arithmetic/logic unit                                   #
+-- #     * neorv32_cpu_cp_bitmanip.vhd   - Bit-manipulation co-processor                           #
+-- #     * neorv32_cpu_cp_fpu.vhd        - Single-precision FPU co-processor                       #
+-- #     * neorv32_cpu_cp_muldiv.vhd     - Integer multiplier/divider co-processor                 #
+-- #     * neorv32_cpu_cp_shifter.vhd    - Base ISA shifter unit                                   #
 -- #   * neorv32_cpu_bus.vhd             - Instruction and data bus interface unit                 #
--- #   * neorv32_cpu_cp_bitmanip.vhd     - Bit-manipulation co-processor ('B')                     #
--- #   * neorv32_cpu_cp_fpu.vhd          - Single-precision FPU co-processor ('Zfinx')             #
--- #   * neorv32_cpu_cp_muldiv.vhd       - Integer multiplier/divider co-processor ('M')           #
--- #   * neorv32_cpu_ctrl.vhd            - CPU control and CSR system                              #
+-- #   * neorv32_cpu_control.vhd         - CPU control and CSR system                              #
 -- #     * neorv32_cpu_decompressor.vhd  - Compressed instructions decoder                         #
 -- #   * neorv32_cpu_regfile.vhd         - Data register file                                      #
 -- # * neorv32_package.vhd               - Main CPU & Processor package file                       #
 -- #                                                                                               #
--- # Check out the processor's data sheet for more information: docs/NEORV32.pdf                   #
+-- # Check out the CPU's online documentation for more information:                                #
+-- #  HQ:         https://github.com/stnolting/neorv32                                             #
+-- #  Data Sheet: https://stnolting.github.io/neorv32                                              #
+-- #  User Guide: https://stnolting.github.io/neorv32/ug                                           #
 -- # ********************************************************************************************* #
 -- # BSD 3-Clause License                                                                          #
 -- #                                                                                               #
@@ -56,72 +60,74 @@ use neorv32.neorv32_package.all;
 entity neorv32_cpu is
   generic (
     -- General --
-    HW_THREAD_ID                 : natural := 0;     -- hardware thread id (32-bit)
-    CPU_BOOT_ADDR                : std_ulogic_vector(31 downto 0):= x"00000000"; -- cpu boot address
-    CPU_DEBUG_ADDR               : std_ulogic_vector(31 downto 0) := x"00000000"; -- cpu debug mode start address
+    HW_THREAD_ID                 : natural; -- hardware thread id (32-bit)
+    CPU_BOOT_ADDR                : std_ulogic_vector(31 downto 0); -- cpu boot address
+    CPU_DEBUG_ADDR               : std_ulogic_vector(31 downto 0); -- cpu debug mode start address
     -- RISC-V CPU Extensions --
-    CPU_EXTENSION_RISCV_A        : boolean := false; -- implement atomic extension?
-    CPU_EXTENSION_RISCV_C        : boolean := false; -- implement compressed extension?
-    CPU_EXTENSION_RISCV_E        : boolean := false; -- implement embedded RF extension?
-    CPU_EXTENSION_RISCV_M        : boolean := false; -- implement muld/div extension?
-    CPU_EXTENSION_RISCV_U        : boolean := false; -- implement user mode extension?
-    CPU_EXTENSION_RISCV_Zfinx    : boolean := false; -- implement 32-bit floating-point extension (using INT reg!)
-    CPU_EXTENSION_RISCV_Zicsr    : boolean := true;  -- implement CSR system?
-    CPU_EXTENSION_RISCV_Zifencei : boolean := false; -- implement instruction stream sync.?
-    CPU_EXTENSION_RISCV_DEBUG    : boolean := false; -- implement CPU debug mode?
+    CPU_EXTENSION_RISCV_A        : boolean; -- implement atomic extension?
+    CPU_EXTENSION_RISCV_C        : boolean; -- implement compressed extension?
+    CPU_EXTENSION_RISCV_E        : boolean; -- implement embedded RF extension?
+    CPU_EXTENSION_RISCV_M        : boolean; -- implement muld/div extension?
+    CPU_EXTENSION_RISCV_U        : boolean; -- implement user mode extension?
+    CPU_EXTENSION_RISCV_Zbb      : boolean; -- implement basic bit-manipulation sub-extension?
+    CPU_EXTENSION_RISCV_Zfinx    : boolean; -- implement 32-bit floating-point extension (using INT reg!)
+    CPU_EXTENSION_RISCV_Zicsr    : boolean; -- implement CSR system?
+    CPU_EXTENSION_RISCV_Zifencei : boolean; -- implement instruction stream sync.?
+    CPU_EXTENSION_RISCV_Zmmul    : boolean; -- implement multiply-only M sub-extension?
+    CPU_EXTENSION_RISCV_DEBUG    : boolean; -- implement CPU debug mode?
     -- Extension Options --
-    FAST_MUL_EN                  : boolean := false; -- use DSPs for M extension's multiplier
-    FAST_SHIFT_EN                : boolean := false; -- use barrel shifter for shift operations
-    CPU_CNT_WIDTH                : natural := 64;    -- total width of CPU cycle and instret counters (0..64)
+    FAST_MUL_EN                  : boolean; -- use DSPs for M extension's multiplier
+    FAST_SHIFT_EN                : boolean; -- use barrel shifter for shift operations
+    CPU_CNT_WIDTH                : natural; -- total width of CPU cycle and instret counters (0..64)
+    CPU_IPB_ENTRIES              : natural; -- entries is instruction prefetch buffer, has to be a power of 2
     -- Physical Memory Protection (PMP) --
-    PMP_NUM_REGIONS              : natural := 0;     -- number of regions (0..64)
-    PMP_MIN_GRANULARITY          : natural := 64*1024; -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
+    PMP_NUM_REGIONS              : natural; -- number of regions (0..64)
+    PMP_MIN_GRANULARITY          : natural; -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
     -- Hardware Performance Monitors (HPM) --
-    HPM_NUM_CNTS                 : natural := 0;     -- number of implemented HPM counters (0..29)
-    HPM_CNT_WIDTH                : natural := 40     -- total size of HPM counters (0..64)
+    HPM_NUM_CNTS                 : natural; -- number of implemented HPM counters (0..29)
+    HPM_CNT_WIDTH                : natural  -- total size of HPM counters (0..64)
   );
   port (
     -- global control --
-    clk_i          : in  std_ulogic := '0'; -- global clock, rising edge
-    rstn_i         : in  std_ulogic := '0'; -- global reset, low-active, async
+    clk_i          : in  std_ulogic; -- global clock, rising edge
+    rstn_i         : in  std_ulogic; -- global reset, low-active, async
     sleep_o        : out std_ulogic; -- cpu is in sleep mode when set
     -- instruction bus interface --
     i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0) := (others => '0'); -- bus read data
+    i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
     i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
     i_bus_re_o     : out std_ulogic; -- read enable
     i_bus_lock_o   : out std_ulogic; -- exclusive access request
-    i_bus_ack_i    : in  std_ulogic := '0'; -- bus transfer acknowledge
-    i_bus_err_i    : in  std_ulogic := '0'; -- bus transfer error
+    i_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
+    i_bus_err_i    : in  std_ulogic; -- bus transfer error
     i_bus_fence_o  : out std_ulogic; -- executed FENCEI operation
     i_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
     -- data bus interface --
     d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0) := (others => '0'); -- bus read data
+    d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
     d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable
     d_bus_re_o     : out std_ulogic; -- read enable
     d_bus_lock_o   : out std_ulogic; -- exclusive access request
-    d_bus_ack_i    : in  std_ulogic := '0'; -- bus transfer acknowledge
-    d_bus_err_i    : in  std_ulogic := '0'; -- bus transfer error
+    d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
+    d_bus_err_i    : in  std_ulogic; -- bus transfer error
     d_bus_fence_o  : out std_ulogic; -- executed FENCE operation
     d_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
     -- system time input from MTIME --
-    time_i         : in  std_ulogic_vector(63 downto 0) := (others => '0'); -- current system time
+    time_i         : in  std_ulogic_vector(63 downto 0); -- current system time
     -- non-maskable interrupt --
-    nm_irq_i       : in  std_ulogic := '0'; -- NMI
+    nm_irq_i       : in  std_ulogic; -- NMI
     -- interrupts (risc-v compliant) --
-    msw_irq_i      : in  std_ulogic := '0'; -- machine software interrupt
-    mext_irq_i     : in  std_ulogic := '0'; -- machine external interrupt
-    mtime_irq_i    : in  std_ulogic := '0'; -- machine timer interrupt
+    msw_irq_i      : in  std_ulogic;-- machine software interrupt
+    mext_irq_i     : in  std_ulogic;-- machine external interrupt
+    mtime_irq_i    : in  std_ulogic;-- machine timer interrupt
     -- fast interrupts (custom) --
-    firq_i         : in  std_ulogic_vector(15 downto 0) := (others => '0');
-    firq_ack_o     : out std_ulogic_vector(15 downto 0);
+    firq_i         : in  std_ulogic_vector(15 downto 0);
     -- debug mode (halt) request --
-    db_halt_req_i  : in  std_ulogic := '0'
+    db_halt_req_i  : in  std_ulogic
   );
 end neorv32_cpu;
 
@@ -158,6 +164,25 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
 
 begin
 
+  -- CPU ISA Configuration ---------------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  assert false report
+  "NEORV32 CPU ISA Configuration (MARCH): " &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_E, "RV32E", "RV32I") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_M, "M", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_A, "A", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_C, "C", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_U, "U", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_Zbb, "_Zbb", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_Zicsr, "_Zicsr", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_Zifencei, "_Zifencei", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_Zfinx, "_Zfinx", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_Zmmul, "_Zmmul", "") &
+  cond_sel_string_f(CPU_EXTENSION_RISCV_DEBUG, "_Debug", "") &
+  ""
+  severity note;
+
+
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- hardware reset notifier --
@@ -176,13 +201,13 @@ begin
   assert not ((CPU_EXTENSION_RISCV_Zicsr = false) and (CPU_EXTENSION_RISCV_U = true)) report "NEORV32 CPU CONFIG ERROR! User mode requires <CPU_EXTENSION_RISCV_Zicsr> extension to be enabled." severity error;
 
   -- Instruction prefetch buffer size --
-  assert not (is_power_of_two_f(ipb_entries_c) = false) report "NEORV32 CPU CONFIG ERROR! Number of entries in instruction prefetch buffer <ipb_entries_c> has to be a power of two." severity error;
+  assert not (is_power_of_two_f(CPU_IPB_ENTRIES) = false) report "NEORV32 CPU CONFIG ERROR! Number of entries in instruction prefetch buffer <CPU_IPB_ENTRIES> has to be a power of two." severity error;
 
   -- Co-processor timeout counter (for debugging only) --
   assert not (cp_timeout_en_c = true) report "NEORV32 CPU CONFIG WARNING! Co-processor timeout counter enabled. This should be used for debugging/simulation only." severity warning;
 
   -- PMP regions check --
-  assert not (PMP_NUM_REGIONS > 64) report "NEORV32 CPU CONFIG ERROR! Number of PMP regions <PMP_NUM_REGIONS> out xf valid range (0..64)." severity error;
+  assert not (PMP_NUM_REGIONS > 64) report "NEORV32 CPU CONFIG ERROR! Number of PMP regions <PMP_NUM_REGIONS> out of valid range (0..64)." severity error;
   -- PMP granularity --
   assert not ((is_power_of_two_f(PMP_MIN_GRANULARITY) = false) and (PMP_NUM_REGIONS > 0)) report "NEORV32 CPU CONFIG ERROR! <PMP_MIN_GRANULARITY> has to be a power of two." severity error;
   assert not ((PMP_MIN_GRANULARITY < 8) and (PMP_NUM_REGIONS > 0)) report "NEORV32 CPU CONFIG ERROR! <PMP_MIN_GRANULARITY> has to be >= 8 bytes." severity error;
@@ -195,8 +220,17 @@ begin
   -- HPM CNT requires Zicsr extension --
   assert not ((CPU_EXTENSION_RISCV_Zicsr = false) and (HPM_NUM_CNTS > 0)) report "NEORV32 CPU CONFIG ERROR! Hardware performance monitors (HPM) require <CPU_EXTENSION_RISCV_Zicsr> extension to be enabled." severity error;
 
+  -- Mul-extension --
+  assert not ((CPU_EXTENSION_RISCV_Zmmul = true) and (CPU_EXTENSION_RISCV_M = true)) report "NEORV32 CPU CONFIG ERROR! <M> and <Zmmul> extensions cannot co-exist!" severity error;
+
   -- Debug mode --
   assert not ((CPU_EXTENSION_RISCV_DEBUG = true) and (CPU_EXTENSION_RISCV_Zicsr = false)) report "NEORV32 CPU CONFIG ERROR! Debug mode requires <CPU_EXTENSION_RISCV_Zicsr> extension to be enabled." severity error;
+
+  -- fast multiplication option --
+  assert not (FAST_MUL_EN = true) report "NEORV32 CPU CONFIG NOTE: <FAST_MUL_EN> set. Trying to use DSP blocks for base ISA multiplications." severity note;
+
+  -- fast shift option --
+  assert not (FAST_SHIFT_EN = true) report "NEORV32 CPU CONFIG NOTE: <FAST_SHIFT_EN> set. Implementing full-parallel logic / barrel shifters." severity note;
 
 
   -- Control Unit ---------------------------------------------------------------------------
@@ -210,14 +244,18 @@ begin
     -- RISC-V CPU Extensions --
     CPU_EXTENSION_RISCV_A        => CPU_EXTENSION_RISCV_A,        -- implement atomic extension?
     CPU_EXTENSION_RISCV_C        => CPU_EXTENSION_RISCV_C,        -- implement compressed extension?
-    CPU_EXTENSION_RISCV_M        => CPU_EXTENSION_RISCV_M,        -- implement muld/div extension?
+    CPU_EXTENSION_RISCV_E        => CPU_EXTENSION_RISCV_E,        -- implement embedded RF extension?
+    CPU_EXTENSION_RISCV_M        => CPU_EXTENSION_RISCV_M,        -- implement mul/div extension?
     CPU_EXTENSION_RISCV_U        => CPU_EXTENSION_RISCV_U,        -- implement user mode extension?
+    CPU_EXTENSION_RISCV_Zbb      => CPU_EXTENSION_RISCV_Zbb,      -- implement basic bit-manipulation sub-extension?
     CPU_EXTENSION_RISCV_Zfinx    => CPU_EXTENSION_RISCV_Zfinx,    -- implement 32-bit floating-point extension (using INT reg!)
     CPU_EXTENSION_RISCV_Zicsr    => CPU_EXTENSION_RISCV_Zicsr,    -- implement CSR system?
     CPU_EXTENSION_RISCV_Zifencei => CPU_EXTENSION_RISCV_Zifencei, -- implement instruction stream sync.?
+    CPU_EXTENSION_RISCV_Zmmul    => CPU_EXTENSION_RISCV_Zmmul,    -- implement multiply-only M sub-extension?
     CPU_EXTENSION_RISCV_DEBUG    => CPU_EXTENSION_RISCV_DEBUG,    -- implement CPU debug mode?
     -- Extension Options --
     CPU_CNT_WIDTH                => CPU_CNT_WIDTH,                -- total width of CPU cycle and instret counters (0..64)
+    CPU_IPB_ENTRIES              => CPU_IPB_ENTRIES,              -- entries is instruction prefetch buffer, has to be a power of 2
     -- Physical memory protection (PMP) --
     PMP_NUM_REGIONS              => PMP_NUM_REGIONS,              -- number of regions (0..64)
     PMP_MIN_GRANULARITY          => PMP_MIN_GRANULARITY,          -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
@@ -257,7 +295,6 @@ begin
     nm_irq_i      => nm_irq_i,    -- nmi
     -- fast interrupts (custom) --
     firq_i        => firq_i,      -- fast interrupt trigger
-    firq_ack_o    => firq_ack_o,  -- fast interrupt acknowledge mask
     -- system time input from MTIME --
     time_i        => time_i,      -- current system time
     -- physical memory protection --
@@ -303,6 +340,8 @@ begin
   generic map (
     -- RISC-V CPU Extensions --
     CPU_EXTENSION_RISCV_M     => CPU_EXTENSION_RISCV_M,     -- implement mul/div extension?
+    CPU_EXTENSION_RISCV_Zbb   => CPU_EXTENSION_RISCV_Zbb,   -- implement basic bit-manipulation sub-extension?
+    CPU_EXTENSION_RISCV_Zmmul => CPU_EXTENSION_RISCV_Zmmul, -- implement multiply-only M sub-extension?
     CPU_EXTENSION_RISCV_Zfinx => CPU_EXTENSION_RISCV_Zfinx, -- implement 32-bit floating-point extension (using INT reg!)
     -- Extension Options --
     FAST_MUL_EN               => FAST_MUL_EN,               -- use DSPs for M extension's multiplier

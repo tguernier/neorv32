@@ -6,9 +6,10 @@ The latest release is [![release](https://img.shields.io/github/v/release/stnolt
 A list of all releases can be found [here](https://github.com/stnolting/neorv32/releases). The most recent version of the *NEORV32 data sheet*
 can be found [online at GitHub-pages](https://stnolting.github.io/neorv32).
 
-:information_source: To see a list of all commits between releases run `git log RELEASE_A..RELEASE_B` (example: `v1.4.7.0..v1.4.8.0`).
+:information_source: Starting with version `1.5.7` this project uses [semantic versioning](https://semver.org) syntax for official releases.
+The _hardware version identifier_ uses an addtional custom version element (i.e. `MAJOR.MINOR.PATCH.individual`) to track individual changes.
 
-:information_source: The processor can determine it's version from the `mimpid` CSR (at CSR address 0xf13). A 8x4-bit BCD representation is used.
+:information_source: The processor can determine its version from the `mimpid` CSR (at CSR address 0xf13). A 8x4-bit BCD representation is used.
 Leading zeros are optional. Example: `CSR(mimpid) = 0x01040312 => 01.04.03.12 = Version 01.04.03.12 = v1.4.3.12`. The version number is globally
 defined by the `hw_version_c` constant in the main VHDL package file [`rtl/core/neorv32_package.vhd`](https://github.com/stnolting/neorv32/blob/master/rtl/core/neorv32_package.vhd).
 
@@ -24,7 +25,47 @@ defined by the `hw_version_c` constant in the main VHDL package file [`rtl/core/
 
 | Date (*dd.mm.yyyy*) | Version | Comment |
 |:----------:|:-------:|:--------|
-| 23.06.2021 | [**:rocket:1.5.7**](https://github.com/stnolting/neorv32/releases/tag/v1.5.7) | **New release** |
+| 13.09.2021 | 1.6.0.1 | :bug: fixed missing IRQ singal assignments (MSW and XIRQ) in AXI4-lite top wrapper |
+| 11.09.2021 | [**:rocket:1.6.0**](https://github.com/stnolting/neorv32/releases/tag/v1.6.0) | **New release** |
+| 11.09.2021 | 1.5.9.9 | removed `mstatus.SD` flag (is always 0 for `Zfinx` extension as the current state is already defined entirely by the `x` register file); tied `mstatus.fs` as it must not affect trapping of `Zfinx` instructions (according to RISC-V specs.) |
+| 09.09.2021 | 1.5.9.8 | added flags to `SYSINFO` module to determine configuration of `FAST_MUL_EN` and `FAST_SHIFT_EN` generics by software |
+| 09.09.2021 | 1.5.9.7 | `FAST_SHIFT_EN` option will now also implement full-parallel computation logic (like barel shifters) for _all_ `Zbb` shift-related instructions (population count, count leading/trailing zeros, circular shifts) |
+| 08.09.2021 | 1.5.9.6 | :sparkles: added support for RISC-V `Zbb` CPU extension (**basic bit-manipulation operations**), enabled via new top generic `CPU_EXTENSION_RISCV_Zbb`; added example software project providing a `Zbb` "intrinsic" library |
+| 08.09.2021 | 1.5.9.5 | :bug: fixed missing `flash_sdi_i` in Radiant-related example setups and processor wrappers |
+| 19.08.2021 | 1.5.9.4 | :warning: removed custom `mzext` CPU CSR, moved all information flags to new `SYSINFO_CPU` register in the system information memory module (`SYSINFO`) |
+| 19.08.2021 | 1.5.9.3 | :warning: removed top's `USER_CODE` generic |
+| 18.08.2021 | 1.5.9.2 | fixed `Zifencei` test of `riscv-arch-test` port |
+| 16.08.2021 | 1.5.9.2 | minor CPU control logic optimizations |
+| 15.08.2021 | 1.5.9.1 | :bug: fixed bug in `mret` instruction that caused an exception if user mode was not implemented (bug caused by modifications in v1.5.8.8) |
+| 14.08.2021 | 1.5.9.0 | Added new designated test setups: [`rtl/test_setups`](https://github.com/stnolting/neorv32/tree/master/rtl/test_setups), :books: [_UG: General Hardware Setup_](https://stnolting.github.io/neorv32/ug/#_general_hardware_setup) |
+| 13.08.2021 | [**:rocket:1.5.9**](https://github.com/stnolting/neorv32/releases/tag/v1.5.9) | **New release** |
+| 08.08.2021 | 1.5.8.9 | reworked CPU register file logic: any write access to `x0` will be masked to actually write zero - no special treatment by the CPU control unit required anymore; slighlty less hardware ressources required; first instruction after hardware reset should write `x0` (_any_ value; implemented in start-up code `crt0.S`) |
+| 07.08.2021 | 1.5.8.8 | :bug: fixed bug in execution (trapping) of `xRET` instructions: `dret` (return from debug-mode handler) has to raise an illegal instruction exception if executed outside of debug-mode, `mret` (return from machine-mode handler) has to raise an illegal instruction exception if executed in lower-privileged modes (lower than machine-mode) |
+| 05.08.2021 | 1.5.8.7 | :sparkles: added `mstatus.FS` and `mstatus.SD` CSR bits: control the state of the FPU (`Zfinx`) extension; supported states for `mstatus.FS`: `00` = _off_, `11` = _dirty_; writing other states will always set _dirty_ state; note that all FPU instructions including FPU CSR access instructions will raise an illegal instrution exception if `mstatus.FS` = _off_ |
+| 03.08.2021 | 1.5.8.6 | :bug: fixed bug in linker script [#134](https://github.com/stnolting/neorv32/issues/134): `.rodata.*` "sub"-sections were missing, caused wrong linking of implicit constants (like strings); added `mconfigptr` CSR (RISC-V priv. ISA spec. v1.12-draft ;read-only): holds a pointer to a platfrom/system configuration structure - not actually used yet |
+| 30.07.2021 | 1.5.8.5 | fixed minor bug in top entity / AXI4 wrapper (Vivado "issue": generic defaults need a _fixed-size_ intialization value) [#113](https://github.com/stnolting/neorv32/issues/133) |
+| 26.07.2021 | 1.5.8.4 | :bug: **fixed major bug in CPU interrupt system**: interrupts during memory accesses (load/store instruction) terminated those memory accesses violating the crucial "instruction atomicity" concept: traps (interrupts and exceptions) must only intervent _between_ instructions |
+| 25.07.2021 | 1.5.8.3 | :sparkles: added `mstauts.TW` CSR flag (when set executing `wfi` instruction outside of machine-mode will raise an illegal instruction exception); flag is hardwired to zero if user mode is not implemented |
+| 25.07.2021 | 1.5.8.2 | :bug: fixed bug in `E` ISA extension: extension could not be enabled due to missing generic propagation; clean-up of generic defaults: only the processor top entity provides defaults for the configuration generics |
+| 24.07.2021 | 1.5.8.1 | machine-level interrupts (top entity signals; "external" `mext_irq_i`, "software" `msw_irq_i`, "mtime" `mtime_irq_i` and "non-maskable" `nm_irq_i`) now trigger on rising edges; exposed advanced external bus interface configuration options as new top entity generics (moved from package constants): `MEM_EXT_PIPE_MODE`, `MEM_EXT_BIG_ENDIAN`, `MEM_EXT_ASYNC_RX` |
+| 22.07.2021 | [**:rocket:1.5.8**](https://github.com/stnolting/neorv32/releases/tag/v1.5.8) | **New release** |
+| 22.07.2021 | 1.5.7.16 | (re-)added `mstatush` CSR (all bits are hardwired to zero: writes are ignored, reads will always return zero) - CSR address is assigned to comply with RISC-V priv. arch. spec. 1.12 |
+| 21.07.2021 | 1.5.7.15 | :bug: fixed minor bug in SLINK module (signals were missing in sensitivity lists); :warning: simplified NEOLED interrupt system (now triggered if TX FIFO fill level falls below half-full), added option to send LED strobe command ("RESET"), added FIFO status signals to status register, simplified FIFO access logic, added new top generic `IO_NEOLED_TX_FIFO` to configure NEOLED FIFO depth |
+| 18.07.2021 | 1.5.7.14 | exposed new generic `CPU_IPB_ENTRIES` to configure size of CPU instruction prefetch buffer |
+| 18.07.2021 | 1.5.7.13 | clean-up of processor top entity: using more sophisticated default values for all input signals and generics (all generics are "off" by default; input signals use `L` for control lines and `U` for data lines by default) |
+| 14.07.2021 | 1.5.7.12 | reworked SLINK interrupt concept (now using FIFO fill level "half-full" as interrupt condition, see [#122](https://github.com/stnolting/neorv32/issues/122)); added fill level output to processor FIFO component |
+| 09.07.2021 | 1.5.7.11 | :bug: fixed minor bug in FIFO component (mapping might fail if `FIFO_DEPTH` = 1); fixed broken `sw/example/demo_freeRTOS` makefile (all freeRTOS includes were missing) |
+| 03.07.2021 | 1.5.7.10 | :sparkles: added new component: **External Interrupt Controller (XIRQ)**: up to 32 external interrupt channels `xirq_i` (via `XIRQ_NUM_CH` generic), configurable trigger (via `XIRQ_TRIGGER_TYPE` and `XIRQ_TRIGGER_POLARITY` generics), prioritized or non-prioritized servicing |
+| 02.07.2021 | 1.5.7.9 | relocated base addresses of watchdog timer (WDT) and true-random number generator (TRNG); removed CPU's `firq_ack_o` signal (was not used at all) |
+| 30.06.2021 | 1.5.7.8 | :warning: increased GPIO port size from 32-bit to 64-bit; relocated GPIO base address; removed GPIO.input pin-change interrupt |
+| 29.06.2021 | 1.5.7.7 | :sparkles: added new processor module **stream link interface (SLINK)**: up to 8 individual RX and TX stream links, comptaible to AXI4-Stream base protocol; added software driver files; added documentation |
+| 27.06.2021 | 1.5.7.6 | :bug: fixed bug in CFS (custom functions subsystem) address map layout |
+| 27.06.2021 | 1.5.7.5 | :warning: removed numerically-controlled oscillator (NCO, `neorv32_nco.vhd`) module as it appears to be an over-engineered clock-generator without many use cases (if you really need this module, you can wrap it within the custom functions subsystem CFS) |
+| 27.06.2021 | 1.5.7.4 | :warning: removed top's fast IRQ (FIRQ) inputs `soc_firq_i`: the FIRQs are reserved for processor-internal usage only, use the `mext_irq_i` RISC-V external interrupt signal for all external interrupt applications (via dedicated interrupt conttoller), a follow-up version of the project will introduce a customizable external interrupt controller; sourced-out FIFOs into new HDL component `neorv32_fifo.vhd` |
+| 26.06.2021 | 1.5.7.3 | edit of v1.5.7.2: RISC-V spec claims to leave destination registers of trapping load operation unchanged (do _not_ set to zero); minor CPU control logic optimizations; :sparkles: reworked bootloader to provide several new configuration and customization options |
+| 25.06.2021 | 1.5.7.2 | optimized instruction execution FSM: less hardware utilization, :lock: now _ensures_ to write ZERO to destination register if there is an exception during a load operation; made default bootloader even more HW configuration independent (GPIO, SPI and MTIME are optional; UART is optional but highly recommended); |
+| 24.06.2021 | 1.5.7.1 | :sparkles: added RISC-V `Zmmul` ISA extension (via `CPU_EXTENSION_RISCV_Zmmul` generic; default = _false_): implements only the integer multiplication instructions sub-set of the `M` extension; for size-constrained setups, requires ~50% less hardware ressources than the `M` extension |
+| 23.06.2021 | [**:rocket:1.5.7**](https://github.com/stnolting/neorv32/releases/tag/v1.5.7) | **New release** _one year NEORV32!_ :tada: |
 | 21.06.2021 | 1.5.6.14 | :bug: fixed bug in debugger "park loop": `fence.i` instruction was missing before executing the DM's program buffer - this caused execution of outdated instructions from the program buffer if the **instruction cache** is implemented |
 | 21.06.2021 | 1.5.6.13 | removed `TINY_SHIFT_EN` generic; clean-up of CPU co-processor system: removed "dummy co-processor" for CSR read access, moved CPU shifter core into new co-processor; simplified default (bit-serial) shifter logic (single bit-shifts only) and multi-cycl instructions decode logic |
 | 18.06.2021 | 1.5.6.12 | clean-up of CPU co-processor system (removed unused co-processor slots 4,5,6,7) |

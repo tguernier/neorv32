@@ -45,7 +45,7 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_cpu_cp_shifter is
   generic (
-    FAST_SHIFT_EN : boolean := false -- use barrel shifter for shift operations
+    FAST_SHIFT_EN : boolean -- use barrel shifter for shift operations
   );
   port (
     -- global control --
@@ -95,7 +95,7 @@ begin
   -- -------------------------------------------------------------------------------------------
   serial_shifter_sync:
   if (FAST_SHIFT_EN = false) generate
-    shifter_unit_sync: process(clk_i)
+    shifter_unit_sync: process(rstn_i, clk_i)
     begin
       if (rstn_i = '0') then
         shifter.busy    <= '0';

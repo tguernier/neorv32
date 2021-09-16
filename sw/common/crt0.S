@@ -42,7 +42,13 @@ _start:
 .cfi_startproc
 .cfi_undefined ra
 
-  nop
+
+// ************************************************************************************************
+// This is the very first instruction that is executed after hardware reset. It ensures that x0 is
+// written at least once - the CPU HW will ensure it is always set to zero on any write access.
+// ************************************************************************************************
+  lui zero, 0 // "dummy" instruction that uses no reg-file input operands at all
+
 
 // ************************************************************************************************
 // Setup pointers using linker script symbols
@@ -80,10 +86,6 @@ __crt0_cpu_csr_init:
   csrw mcycleh,   zero
   csrw minstret,  zero                  // reset instruction counters
   csrw minstreth, zero
-
-#if defined(__riscv_flen)
-  csrw fcsr, zero                       // reset floating-point CSR
-#endif
 
 
 // ************************************************************************************************

@@ -2,11 +2,11 @@
 
 print('::set-output name=matrix::' + str([
 {
-  'board': 'UPduino_v3',
+  'board': 'UPduino',
   'design': 'MinimalBoot',
   'bitstream': 'neorv32_UPduino_v3_MinimalBoot.bit'
 }, {
-  'board': 'UPduino_v3',
+  'board': 'UPduino',
   'design': 'UP5KDemo',
   'bitstream': 'neorv32_UPduino_v3_UP5KDemo.bit'
 }, {
@@ -33,4 +33,16 @@ print('::set-output name=matrix::' + str([
   'board': 'iCESugar',
   'design': 'MinimalBoot',
   'bitstream': 'neorv32_iCESugar_MinimalBoot.bit'
+}, {
+  'board': 'OrangeCrab',
+  'design': 'MinimalBoot',
+  'bitstream': 'neorv32_OrangeCrab_r02-25F_MinimalBoot.bit'
+}, {
+  'board': 'AlhambraII',
+  'design': 'MinimalBoot',
+  'bitstream': 'neorv32_AlhambraII_MinimalBoot.bit'
+}, {
+  'board': 'ULX3S',
+  'design': 'MinimalBoot',
+  'bitstream': 'neorv32_ULX3S_MinimalBoot.bit'
 }]))

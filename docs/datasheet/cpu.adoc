@@ -13,9 +13,11 @@ image::riscv_logo.png[width=350,align=center]
 ** `E` - embedded CPU version (reduced register file size)
 ** `M` - integer multiplication and division hardware
 ** `U` - less-privileged _user_ mode
+** `Zbb` - basic bit-manipulation operations
 ** `Zfinx` - single-precision floating-point unit
 ** `Zicsr` - control and status register access (privileged architecture)
 ** `Zifencei` - instruction stream synchronization
+** `Zmmul` - integer multiplication hardware
 ** `PMP` - physical memory protection
 ** `HPM` - hardware performance monitors
 ** `DB` - debug mode
@@ -84,7 +86,10 @@ Architecture.
 
 The NEORV32 CPU passes the rv32_m/I, rv32_m/M, rv32_m/C, rv32_m/privilege, and
 rv32_m/Zifencei tests of the official RISC-V Architecture Tests (GitHub). The port files for the
-NEORV32 processor are located in the repository's `riscv-arch-test` folder. See section <<_risc_v_architecture_test_framework>>
+NEORV32 processor are located in the repository's `sw/isa-test` folder.
+
+[NOTE]
+See section https://stnolting.github.io/neorv32/ug/#_risc_v_architecture_test_framework[User Guide: RISC-V Architecture Test Framework]
 for information how to run the tests on the NEORV32.
 
 .**RISC-V `rv32_m/C` Tests**
@@ -338,8 +343,13 @@ see the The _RISC-V Instruction Set Manual – Volume I: Unprivileged ISA_ and _
 Volume II: Privileged Architecture_, which are available in the projects `docs/references` folder.
 
 [TIP]
-The CPU can discover available ISA extensions via the <<_misa>> and <<_mzext>> CSRs or by executing an instruction
-and checking for an _illegal instruction exception_.
+The CPU can discover available ISA extensions via the <<_misa>> CSR and the
+_SYSINFO_CPU_ <<_system_configuration_information_memory_sysinfo, SYSINFO>> register
+or by executing an instruction and checking for an _illegal instruction exception_.
+
+[NOTE]
+Executing an instruction from an extension that is not implemented or not enabled (for example via the according
+top entity generic) will raise an _illegal instruction_ exception.
 
 
 ==== **`A`** - Atomic Memory Access
@@ -383,7 +393,8 @@ The embedded CPU extensions reduces the size of the general purpose register fil
 requirements. This extensions is enabled when the `CPU_EXTENSION_RISCV_E` configuration generic is _true_. Accesses to registers beyond
 `x15` will raise and _illegal instruction exception_.
 
-Due to the reduced register file an alternate ABI (**`ilp32e`**) is required for the toolchain.
+[IMPORTANT]
+Due to the reduced register file size an alternate toolchain ABI (**`ilp32e`**) is required.
 
 
 ==== **`I`** - Base Integer ISA
@@ -402,7 +413,7 @@ instructions:
 In order to keep the hardware footprint low, the CPU's shift unit uses a bit-serial serial approach. Hence, shift operations
 take up to 32 cycles (plus overhead) depending on the actual shift amount. Alternatively, the shift operations can be processed
 completely in parallels by a fast (but large) barrel shifter when the `FAST_SHIFT_EN` generic is _true_. In that case, shift operations
-complete within 2 cycles (plus overhead) regardless of the actual shift amount. 
+complete within 2 cycles (plus overhead) regardless of the actual shift amount.
 
 [NOTE]
 Internally, the `fence` instruction does not perform any operation inside the CPU. It only sets the
@@ -416,8 +427,8 @@ Hardware-accelerated integer multiplication and division instructions are availa
 `CPU_EXTENSION_RISCV_M` configuration generic is _true_. In this case the following instructions are
 available:
 
-• multiplication: `mul`, `mulh`, `mulhsu`, `mulhu`
-• division: `div`, `divu`, `rem`, `remu`
+* multiplication: `mul`, `mulh`, `mulhsu`, `mulhu`
+* division: `div`, `divu`, `rem`, `remu`
 
 [NOTE]
 By default, multiplication and division operations are executed in a bit-serial approach.
@@ -426,9 +437,29 @@ generic is _true_ allowing faster execution. Multiplications and divisions
 always require a fixed amount of cycles to complete - regardless of the input operands.
 
 
+==== **`Zmmul`** - Integer Multiplication
+
+This is a _sub-extension_ of the `M` ISA extension. It implements the multiplication-only operations
+of the `M` extensions and is intended for small scale applications, that require hardware-based
+integer multiplications but not hardware-based divisions, which will be computed entirely in software.
+This extension requires only ~50% of the hardware utilization of the `M` extension.
+
+* multiplication: `mul`, `mulh`, `mulhsu`, `mulhu`
+
+If `Zmmul` is enabled, executing any division instruction from the `M` ISA extension (`div`, `divu`, `rem`, `remu`)
+will raise an _illegal instruction exception_.
+
+Note that `M` and `Zmmul` extensions _cannot_ be enabled at the same time.
+
+[TIP]
+If your RISC-V GCC toolchain does not (yet) support the `_Zmmul` ISA extensions, it can be "emulated"
+using a `rv32im` machine architecture and setting the `-mno-div` compiler flag
+(example `$ make MARCH=-march=rv32im USER_FLAGS+=-mno-div clean_all exe`).
+
+
 ==== **`U`** - Less-Privileged User Mode
 
-Adds the less-privileged _user mode_ when the `CPU_EXTENSION_RISCV_U` configuration generic is _true_. For
+Adds the less-privileged _user mode_ if the `CPU_EXTENSION_RISCV_U` configuration generic is _true_. For
 instance, use-level code cannot access machine-mode CSRs. Furthermore, access to the address space (like
 peripheral/IO devices) can be limited via the physical memory protection (_PMP_) unit for code running in user mode.
 
@@ -437,24 +468,18 @@ peripheral/IO devices) can be limited via the physical memory protection (_PMP_)
 
 The NEORV32-specific extensions are always enabled and are indicated by the set `X` bit in the `misa` CSR.
 
-[NOTE]
-The CPU provides 16 _fast interrupt_ interrupts (`FIRQ)`, which are controlled via custom bits in the `mie`
+The most important points of the NEORV32-specific extensions are:
+* The CPU provides 16 _fast interrupt_ interrupts (`FIRQ)`, which are controlled via custom bits in the `mie`
 and `mip` CSR. This extension is mapped to bits, that are available for custom use (according to the
 RISC-V specs). Also, custom trap codes for `mcause` are implemented.
-
-[NOTE]
-The CPU provides a single _non-maskable_ interrupt (`NMI)` that also provides a custom trap code for `mcause`.
-
-[NOTE]
-A custom CSR `mzext` is available that can be used to check for implemented `Z*` CPU extensions
-(for example `Zifencei`). This CSR is mapped to the official "custom CSR address region".
-
-[NOTE]
-All undefined/unimplemented/malformed/illegal instructions do raise an illegal instruction exception
-(see <<_execution_safety>>).
+* The CPU provides a single _non-maskable_ interrupt (`NMI)` that also provides a custom trap code for `mcause`.
+* All undefined/unimplemented/malformed/illegal instructions do raise an illegal instruction exception (see <<_full_virtualization>>).
 
 
 ==== **`Zfinx`** Single-Precision Floating-Point Operations
+
+[WARNING]
+The NEORV32 `Zfinx` extension is specification-compliant and operational but still _experimental_.
 
 The `Zfinx` floating-point extension is an alternative of the `F` floating-point instruction that also uses the
 integer register file `x` to store and operate on floating-point data (hence, `F-in-x`). Since not dedicated floating-point `f`
@@ -493,6 +518,37 @@ intrinsic library is provided to utilize the provided `Zfinx` floating-point ext
 code (see `sw/example/floating_point_test`).
 
 
+==== **`Zbb`** Basic Bit-Manipulation Operations
+
+[WARNING]
+The NEORV32 `Zbb` extension is specification-compliant and operational but still _experimental_.
+
+The `Zbb` extension implements the _basic_ sub-set of the RISC-V bit-manipulation extensions `B`.
+The official RISC-V specifications can be found here: https://github.com/riscv/riscv-bitmanip
+
+The `Zbb` extension is implemented when the `CPU_EXTENSION_RISCV_Zbb` configuration
+generic is _true_. In this case the following instructions are available:
+
+* `andn`, `orn`, `xnor`
+* `clz`, `ctz`, `cpop`
+* `max`, `maxu`, `min`, `minu`
+* `sext.b`, `sext.h`, `zext.h`
+* `rol`, `ror`, `rori`
+* `orc.b`, `rev8`
+
+[TIP]
+By default, the bit-manipulation unit uses an _iterative_ approach to compute shift-related operations
+like `clz` and `rol`. To increase performance (at the cost of additional hardware resources) the 
+<<_fast_shift_en>> generic can be enabled to implement full-parallel logic (like barrel shifters) for all
+shift-related `Zbb` instructions.
+
+[IMPORTANT]
+The `Zbb` extension is frozen but not officially ratified yet. There is no
+software support for this extension in the upstream GCC RISC-V port yet. However, an
+intrinsic library is provided to utilize the provided `Zbb` extension from C-language
+code (see `sw/example/bitmanip_test`).
+
+
 ==== **`Zicsr`** Control and Status Register Access / Privileged Architecture
 
 The CSR access instructions as well as the exception and interrupt system (= the privileged architecture) is implemented when the
@@ -511,6 +567,10 @@ environment, the `Zicsr` extension should always be enabled.
 The "wait for interrupt instruction" `wfi` works like a sleep command. When executed, the CPU is
 halted until a valid interrupt request occurs. To wake up again, the according interrupt source has to
 be enabled via the `mie` CSR and the global interrupt enable flag in `mstatus` has to be set.
+
+[IMPORTANT]
+The `wfi` instruction will raise an illegal instruction exception when executed outside of machine-mode
+and <<_mstatus>> bit `TW` (timeout wait) is set.
 
 
 ==== **`Zifencei`** Instruction Stream Synchronization
@@ -599,7 +659,7 @@ N-bit wide counter (split in a high-word 32-bit CSR and a low-word 32-bit CSR), 
 CSR defines the architectural events that lead to an increment of the associated HPM counter.
 
 The cycle, time and instructions-retired counters (`[m]cycle[h]`, `time[h]`, `[m]instret[h]`) are
-mandatory performance monitors on every RISC-V platform and have fixed increment event. For example,
+mandatory performance monitors on every RISC-V platform and have fixed increment events. For example,
 the instructions-retired counter increments with each executed instructions. The actual hardware performance
 monitors are optional and can be configured to increment on arbitrary hardware events. The number of
 available HPM is configured via the top's `HPM_NUM_CNTS` generic at synthesis time. Assigning a zero will exclude
@@ -607,15 +667,19 @@ all HPM logic from the design.
 
 Depending on the configuration, the following additional CSR are available:
 
-* counters: `[m]hpmcounter*[h]` (3..31, depending on configuration)
+* counters: `mhpmcounter*[h]` (3..31, depending on configuration)
 * event configuration: `mhpmevent*` (3..31, depending on configuration)
 
-User-level access to the counter registers `hpmcounter*[h]` can be individually restricted via the `mcounteren` CSR.
+[IMPORTANT]
+The HPM counter CSR can only be accessed in machine-mode. Hence, the according `mcounteren` CSR bits
+are always zero and read-only.
+
 Auto-increment of the HPMs can be individually deactivated via the `mcountinhibit` CSR.
 
-If `HPM_NUM_CNTS` is lower than the maximumg value (=29) the remaining HPMs are not implemented.
-However, accessing their associated CSRs will not raise an illegal instructions exception. These CSR are
-read-only and will always return 0.
+If `HPM_NUM_CNTS` is lower than the maximum value (=29) the remaining HPM CSRs are not implemented and the
+according `mcountinhibit` CSR bits are hardwired to zero.
+However, accessing their associated CSRs will not raise an illegal instruction exception (if in machine mode).
+The according CSRs are read-only and will always return 0.
 
 [NOTE]
 For a list of all allocated HPM-related CSRs and all provided event configurations see section <<_hardware_performance_monitors_hpm>>.
@@ -670,6 +734,10 @@ configurations are presented in <<_cpu_performance>>.
 | Floating-point - misc | `Zfinx` | `fsgnj.s` `fsgnjn.s` `fsgnjx.s` `fclass.s` | 12
 | Floating-point - conversion | `Zfinx` | `fcvt.w.s` `fcvt.wu.s` | 47
 | Floating-point - conversion | `Zfinx` | `fcvt.s.w` `fcvt.s.wu` | 48
+| Basic bit-manip - logic | `Zbb` | `andn` `orn` `xnor` | 3
+| Basic bit-manip - shift | `Zbb` | `clz` `ctz` `cpop` `rol` `ror` `rori` | 4+SA, FAST_SHIFT: 4
+| Basic bit-manip - arith | `Zbb` | `max` `maxu` `min` `minu` | 3
+| Basic bit-manip - misc  | `Zbb` | `sext.b` `sext.h` `zext.h` `orc.b` `rev8` | 3
 |=======================
 
 [NOTE]
@@ -687,31 +755,25 @@ include::cpu_csr.adoc[]
 <<<
 // ####################################################################################################################
 :sectnums:
-==== Execution Safety
+==== Full Virtualization
 
-The hardware of the NEORV32 CPU was designed for maximum *execution safety*. If the `Zicsr` CPU
-extension is enabled, the core supports **all** traps specified by the official RISC-V specifications (obviously,
-not the ones that are related to yet unimplemented extensions/features). Thus, the CPU provides well-defined
-hardware fall-backs for (nearly) everything that can go wrong. Even if any kind of trap is triggered, the core
-is always in a defined and fully synchronized state throughout the whole architecture (i.e. no need to make
-out-of-order operations undone) that allows predictable execution behavior at any time.
+Just like the RISC-V ISA the NEORV32 aims to support _ maximum virtualization_ capabilities
+on CPU _and_ SoC level. The CPU supports **all** traps specified by the official RISC-V specifications.footnote:[If the `Zicsr` CPU
+extension is enabled (implementing the full set of the privileged architecture).]
+Thus, the CPU provides defined hardware fall-backs for any expected and unexpected situation (e.g. executing an
+malformed instruction word or accessing a not-allocated address). For any kind of trap the core is always in a
+defined and fully synchronized state throughout the whole architecture (i.e. there are no out-of-order operations that
+have to be made undone). This allows predictable execution behavior - and thus, defined operations to resolve the cause
+of the trap - at any time improving overall _execution safety_.
 
-**Core Safety Features**
+**NEORV32-Specific Virtualization Features**
 
-* Due to the acknowledged memory accesses the CPU is _always_ sync with the memory system (no speculative execution / out-of-order states).
-* The CPU supports all bus exceptions including bus access exceptions that are triggered if an
-accessed address does not respond or encounters an internal error during access (which is a rare
-feature in many open-source RISC-V cores).
-* The CPU raises an illegal instruction trap for **all** unimplemented/malformed/illegal instructions (to support _full_ virtualization).
-* If user-level code tries to read from machine-level-only CSRs (like `mstatus`) an illegal instruction
-exception is raised. The results of this operations is always zero (though, machine-level
-code handling this exception can modify the target register of the illegal access-causing
-instruction to allow full virtualization). Illegal write accesses to machine CSRs will not be write any data at all.
-* Illegal user-level memory accesses to protected addresses or address regions (via physical memory
-protection) will not be conducted at all (no actual write and no actual read; prevents triggering of
-memory-mapped devices). Illegal load operations will not return any data (the instruction's
-destination register will not be written at all).
-
+* Due to the acknowledged memory accesses the CPU is _always_ sync with the memory system
+(i.e. there is no speculative execution / no out-of-order states).
+* The CPU supports _all_ RISC-V bus exceptions including access exceptions that are triggered if an
+accessed address does not respond or encounters an internal error during access.
+* The CPU raises an illegal instruction trap for _all_ unimplemented/malformed/illegal instructions.
+* To be continued...
 
 
 <<<
@@ -719,53 +781,60 @@ destination register will not be written at all).
 :sectnums:
 ==== Traps, Exceptions and Interrupts
 
-In this document a (maybe) special nomenclature regarding traps is used:
+In this document the following nomenclature regarding traps is used:
 
 * _interrupt_ = asynchronous exceptions
 * _exceptions_ = synchronous exceptions
 * _traps_ = exceptions + interrupts (synchronous or asynchronous exceptions)
 
-Whenever an exception or interrupt is triggered, the CPU transfers control to the address stored in the `mtvec`
-CSR. The cause of the according interrupt or exception can be determined via the content of the `mcause`
-CSR The address that reflected the current program counter when a trap was taken is stored to `mepc`.
-Additional information regarding the cause of the trap can be retrieved from `mtval`.
+Whenever an exception or interrupt is triggered, the CPU transfers control to the address stored in `mtvec`
+CSR. The cause of the according interrupt or exception can be determined via the content of `mcause`
+CSR. The address that reflects the current program counter when a trap was taken is stored to `mepc` CSR.
+Additional information regarding the cause of the trap can be retrieved from `mtval` CSR.
 
-The traps are prioritized. If several exceptions occur at once only the one with highest priority is triggered. If
-several interrupts trigger at once, the one with highest priority is triggered while the remaining ones are
-queued. After completing the interrupt handler the interrupt with the second highest priority will issues and
-so on.
+The traps are prioritized. If several _exceptions_ occur at once only the one with highest priority is triggered
+while all remaining exceptions are ignored. If several _interrupts_ trigger at once, the one with highest priority
+is serviced first while the remaining ones are queued. After completing the interrupt handler the interrupt with
+the second highest priority will get serviced and so on until no further interrupt are pending.
 
+.Trigger Type
+[IMPORTANT]
+All CPU interrupt request signals are high-level triggered. So an interrupt request will be generated if the
+according signal is _high_ for exactly one cycle (being high for several cycles might cause multiple
+triggering of the same interrupt).
 
-**Memory Access Exceptions**
-
-If a load operation causes any exception, the destination register is not written at all. Exceptions caused by a
-misalignment or a physical memory protection fault do not trigger a bus read-operation at all.
-Exceptions caused by a store address misalignment or a store physical memory protection fault do not trigger
-a bus write-operation at all.
-
-
-**Instruction Atomicity**
-
+.Instruction Atomicity
+[NOTE]
 All instructions execute as atomic operations – interrupts can only trigger between two instructions.
 
 
-**Custom Fast Interrupt Request Lines**
+:sectnums:
+==== Memory Access Exceptions**
 
-As a custom extension, the NEORV32 CPU features 16 fast interrupt request lines via the `firq_i` CPU (/Processor) top
+If a load operation causes any exception, the instruction's destination register is
+_not written_ at all. Load exceptions caused by a misalignment or a physical memory protection fault do not
+trigger a bus read-operation at all. Exceptions caused by a store address misalignment or a store physical
+memory protection fault do not trigger
+a bus write-operation at all.
+
+
+:sectnums:
+==== Custom Fast Interrupt Request Lines
+
+As a custom extension, the NEORV32 CPU features 16 fast interrupt request (FIRQ) lines via the `firq_i` CPU top
 entity signals. These interrupts have custom configuration and status flags in the `mie` and `mip` CSRs and also
-provide custom trap codes in `mcause`.
+provide custom trap codes in `mcause`. Thes FIRQs are reserved for processor-internal usage only.
 
 
-**Non-Maskable Interrupt**
+:sectnums:
+==== Non-Maskable Interrupt
 
 The NEORV32 CPU features a single non-maskable interrupt source via the `nm_irq_i` CPU (/Processor) top
-entity signal that can be used to signal critical system conditions. This interrupt source _cannot_ be disabled at all (even not in interrupt service routines).
+entity signal. This interrupt can be used to signal _critical_ system conditions that need immediate handling.
+The non-maskable interrupt _cannot_ be masked/disabled at all (even not in interrupt service routines).
 Hence, it does _not_ provide configuration/status flags in the `mie` and `mip` CSRs. The RISC-V-compatible
 `mcause` value `0x80000000` is used to indicate the non-maskable interrupt.
 
-[IMPORTANT]
-All CPU/Processor interrupt request signals are triggered when the signal is _high_ for exactly one cycle (being high for several cycles might
-cause multiple triggering of the interrupt).
 
 
 <<<
