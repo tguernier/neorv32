@@ -69,11 +69,12 @@ CSRs with the following notes ...
 | 0x002   | <<_frm>>        | _CSR_FRM_        | r/w | Floating-point dynamic rounding mode | 
 | 0x003   | <<_fcsr>>       | _CSR_FCSR_       | r/w | Floating-point control and status (`frm` + `fflags`) | 
 6+^| **<<_machine_trap_setup>>**
-| 0x300   | <<_mstatus>>    | _CSR_MSTATUS_    | r/w | Machine status register | `C`
+| 0x300   | <<_mstatus>>    | _CSR_MSTATUS_    | r/w | Machine status register - low word | `C`
 | 0x301   | <<_misa>>       | _CSR_MISA_       | r/- | Machine CPU ISA and extensions | `R`
 | 0x304   | <<_mie>>        | _CSR_MIE_        | r/w | Machine interrupt enable register | `X`
 | 0x305   | <<_mtvec>>      | _CSR_MTVEC_      | r/w | Machine trap-handler base address (for ALL traps) | 
 | 0x306   | <<_mcounteren>> | _CSR_MCOUNTEREN_ | r/w | Machine counter-enable register | `C`
+| 0x310   | <<_mstatush>>   | _CSR_MSTATUSH_   | r/- | Machine status register - high word | `C`
 6+^| **<<_machine_trap_handling>>**
 | 0x340   | <<_mscratch>>   | _CSR_MSCRATCH_   | r/w | Machine scratch register | 
 | 0x341   | <<_mepc>>       | _CSR_MEPC_       | r/w | Machine exception program counter | 
@@ -85,7 +86,7 @@ CSRs with the following notes ...
 | 0x3b0 .. 0x3ef | <<_pmpaddr, `pmpaddr0`>> .. <<_pmpaddr, `pmpaddr63`>> | _CSR_PMPADDR0_ .. _CSR_PMPADDR63_ | r/w | Physical memory protection addr. register region 0..63 | 
 6+^| **<<_machine_counters_and_timers>>**
 | 0xb00   | <<_mcycleh, `mcycle`>>      | _CSR_MCYCLE_     | r/w | Machine cycle counter low word | 
-| 0xb02   | <<_minstreth, `_minstret`>> | _CSR_MINSTRET_   | r/w | Machine instruction-retired counter low word | 
+| 0xb02   | <<_minstreth, `minstret`>> | _CSR_MINSTRET_   | r/w | Machine instruction-retired counter low word | 
 | 0xb80   | <<_mcycleh>>                | _CSR_MCYCLE_     | r/w | Machine cycle counter high word | 
 | 0xb82   | <<_minstreth>>              | _CSR_MINSTRET_   | r/w | Machine instruction-retired counter high word |
 | 0xc00   | <<_cycleh, `cycle`>>        | _CSR_CYCLE_      | r/- | Cycle counter low word | 
@@ -101,12 +102,11 @@ CSRs with the following notes ...
 6+^| **<<_machine_counter_setup>>**
 | 0x320   | <<_mcountinhibit>> | _CSR_MCOUNTINHIBIT_ | r/w | Machine counter-enable register |
 6+^| **<<_machine_information_registers>>**
-| 0xf11   | <<_mvendorid>> | _CSR_MVENDORID_ | r/- | Vendor ID |
-| 0xf12   | <<_marchid>>   | _CSR_MARCHID_   | r/- | Architecture ID |
-| 0xf13   | <<_mimpid>>    | _CSR_MIMPID_    | r/- | Machine implementation ID / version |
-| 0xf14   | <<_mhartid>>   | _CSR_MHARTID_   | r/- | Machine thread ID |
-6+^| **<<_neorv32_specific_custom_csrs>>**
-| 0xfc0   | <<_mzext>> | _CSR_MZEXT_ | r/- | Available `Z*` CPU extensions |
+| 0xf11   | <<_mvendorid>>  | _CSR_MVENDORID_  | r/- | Vendor ID |
+| 0xf12   | <<_marchid>>    | _CSR_MARCHID_    | r/- | Architecture ID |
+| 0xf13   | <<_mimpid>>     | _CSR_MIMPID_     | r/- | Machine implementation ID / version |
+| 0xf14   | <<_mhartid>>    | _CSR_MHARTID_    | r/- | Machine thread ID |
+| 0xf15   | <<_mconfigptr>> | _CSR_MCONFIGPTR_ | r/- | Machine configuration pointer register |
 |=======================
 
 
@@ -184,6 +184,8 @@ The following bits are implemented (all remaining bits are always zero and are r
 [options="header",grid="rows"]
 |=======================
 | Bit   | Name [C] | R/W | Function
+| 31    | _CSR_MSTATUS_SD_ | r/- | Read-only bit that is set if the FS field is not all-zero (state _OFF_)
+| 21    | _CSR_MSTATUS_TW_ | r/w | Timeout wait: raise illegal instruction exception if `WFI` instruction is executed outside of M-mode when set
 | 12:11 | _CSR_MSTATUS_MPP_H_ : _CSR_MSTATUS_MPP_L_ | r/w | Previous machine privilege level, 11 = machine (M) level, 00 = user (U) level
 | 7     | _CSR_MSTATUS_MPIE_ | r/w | Previous machine global interrupt enable flag state
 | 3     | _CSR_MSTATUS_MIE_  | r/w | Machine global interrupt enable flag
@@ -226,7 +228,8 @@ CSR is simply ignored and will NOT cause an illegal instruction exception.
 |=======================
 
 [TIP]
-Information regarding the implemented RISC-V `Z*` _sub-extensions_ (like `Zicsr` or `Zfinx`) can be found in the <<_mzext>> CSR.
+Information regarding the implemented RISC-V `Z*` _sub-extensions_ (like `Zicsr` or `Zfinx`) can be found
+in the _SYSINFO_CPU_ <<_system_configuration_information_memory_sysinfo, SYSINFO>> register.
 
 
 :sectnums!:
@@ -298,11 +301,30 @@ exception is raised. If user mode in not implemented (_CPU_EXTENSION_RISCV_U_ = 
 [options="header",grid="rows"]
 |=======================
 | Bit   | Name [C] | R/W | Function
-| 31:16 | -                   | r/- | User-level code is **not** allowed to read HPM counter
+| 31:16 | `0`                 | r/- | Always zero: user-level code is **not** allowed to read HPM counters
 | 2     | _CSR_MCOUNTEREN_IR_ | r/w | User-level code is allowed to read `cycle[h]` CSRs when set
 | 1     | _CSR_MCOUNTEREN_TM_ | r/w | User-level code is allowed to read `time[h]` CSRs when set
 | 0     | _CSR_MCOUNTEREN_CY_ | r/w | User-level code is allowed to read `instret[h]` CSRs when set
 |=======================
+
+
+:sectnums!:
+===== **`mstatush`**
+
+[cols="4,27,>7"]
+[frame="topbot",grid="none"]
+|======
+| 0x310 | **Machine status register - high word** | `mstatush`
+3+| Reset value: _0x00000000_
+3+| The `mstatush` CSR is compatible to the RISC-V specifications. In combination with <<_mstatus>> it shows additional
+execution state information. The NEORV32 `mstatush` CSR is read-only and all bits are hardwired to zero.
+|======
+
+[NOTE]
+The NEORV32 `mstatush` CSR is not a physical register. All write access are ignored and all read accesses will always
+return zero. However, any access will not raise an illegal instruction exception. The CSR address is implemented
+in order to comply with the RISC-V privilege architecture specs.
+
 
 
 <<<
@@ -486,16 +508,16 @@ configuration with <<_cpu_cnt_width>> less than 64 is not RISC-V compliant.
 [IMPORTANT]
 If _CPU_CNT_WIDTH_ is less than 64 (the default value) and greater than or equal 32, the according
 MSBs of `[m]cycleh` and `[m]instreth` are read-only and always read as zero. This configuration
-will also set the _ZXSCNT_ flag in the <<_mzext>> CSR. +
+will also set the _SYSINFO_CPU_ZXSCNT_ flag in the _SYSINFO_CPU_ <<_system_configuration_information_memory_sysinfo, SYSINFO>> register. +
  +
 If _CPU_CNT_WIDTH_ is less than 32 and greater than 0, the `[m]cycleh` and `[m]instreth` do not
 exist and any access will raise an illegal instruction exception. Furthermore, the according MSBs of
 `[m]cycle` and `[m]instret` are read-only and always read as zero. This configuration will also
-set the _ZXSCNT_ flag in the <<_mzext>> CSR. +
+set the _SYSINFO_CPU_ZXSCNT_ flag in the _SYSINFO_CPU_ <<_system_configuration_information_memory_sysinfo, SYSINFO>> register. +
  +
 If _CPU_CNT_WIDTH_ is 0, <<_cycleh>> and <<_instreth>> / <<_mcycleh>> and <<_minstreth>> do not
 exist and any access will raise an illegal instruction exception. This configuration will also set the
-_ZXNOCNT_ flag in the <<_mzext>> CSR.
+_SYSINFO_CPU_ZXNOCNT_ flag in the _SYSINFO_CPU_ <<_system_configuration_information_memory_sysinfo, SYSINFO>> register.
 
 
 :sectnums!:
@@ -606,7 +628,7 @@ bits are hardwired to zero.
 | 0x232 -0x33f | **Machine hardware performance monitor event selector** | `mhpmevent3` - `mhpmevent31`
 3+| Reset value: _UNDEFINED_
 3+| The `mhpmevent*` CSRs are compatible to the RISC-V specifications. The configuration of these CSR define
-the architectural events that cause the according `[m]hpmcounter*[h]` counters to increment. All available events are
+the architectural events that cause the according `mhpmcounter*[h]` counters to increment. All available events are
 listed in the table below. If more than one event is selected, the according counter will increment if any of
 the enabled events is observed (logical OR). Note that the counter will only increment by 1 step per clock
 cycle even if more than one event is observed. If the CPU is in sleep mode, no HPM counter will increment
@@ -615,7 +637,7 @@ at all.
 
 The available hardware performance logic is configured via the _HPM_NUM_CNTS_ top entity generic.
 _HPM_NUM_CNTS_ defines the number of implemented performance monitors and thus, the availability of the
-according `[m]hpmcounter*[h]` and `mhpmevent*` CSRs.
+according `mhpmcounter*[h]` and `mhpmevent*` CSRs.
 
 .HPM event selector
 [cols="^1,<3,^1,<5"]
@@ -681,7 +703,7 @@ always zero and are read-only).
 | Bit  | Name [C] | R/W | Event
 | 0    | _CSR_MCOUNTINHIBIT_IR_ | r/w | the `[m]instret[h]` CSRs will auto-increment with each committed instruction when set
 | 2    | _CSR_MCOUNTINHIBIT_IR_ | r/w | the `[m]cycle[h]` CSRs will auto-increment with each clock cycle (if CPU is not in sleep state) when set
-| 3:31 | _CSR_MCOUNTINHIBIT_HPM3_ _: _CSR_MCOUNTINHIBIT_HPM31_ | r/w | the `[m]hpmcount*[h]` CSRs will auto-increment according to the configured `mhpmevent*` selector
+| 3:31 | _CSR_MCOUNTINHIBIT_HPM3_ _: _CSR_MCOUNTINHIBIT_HPM31_ | r/w | the `mhpmcount*[h]` CSRs will auto-increment according to the configured `mhpmevent*` selector
 |=======================
 
 
@@ -690,6 +712,8 @@ always zero and are read-only).
 :sectnums:
 ==== Machine Information Registers
 
+[NOTE]
+All machine information registers can only be accessed in machine mode and are read-only.
 
 :sectnums!:
 ===== **`mvendorid`**
@@ -742,36 +766,15 @@ which is assigned via the CPU's _HW_THREAD_ID_ generic.
 |======
 
 
-
-<<<
-// ####################################################################################################################
-:sectnums:
-==== NEORV32-Specific Custom CSRs
-
-
 :sectnums!:
-===== **`mzext`**
+===== **`mconfigptr`**
 
 [cols="4,27,>7"]
 [frame="topbot",grid="none"]
 |======
-| 0xfc0 | **Available Z* extensions** | `mzext`
-3+| Reset value: _0x00000000_
-3+| The `mzext` CSR is a custom read-only CSR that shows the implemented Z* extensions. The following bits
-are implemented (all remaining bits are always zero). The entire CSR is read-only.
+| 0xf15 | **Machine configuration pointer register** | `mconfigptr`
+3+| Reset value: `0x00000000`
+3+| This register holds a physical address (if not zero) that points to the base address of an architecture configuration structure.
+Software can traverse this data structure to discover information about the harts, the platform, and their configuration.
+**NOTE: Not assigned yet.**
 |======
-
-.Machine counter-inhibit register
-[cols="^1,<3,^1,<5"]
-[options="header",grid="rows"]
-|=======================
-| Bit | Name [C] | R/W | Event
-| 0   | _CPU_MZEXT_ZICSR_ | r/- | `Zicsr` extensions available (enabled via _CPU_EXTENSION_RISCV_Zicsr_ generic)
-| 1   | _CPU_MZEXT_ZIFENCEI_ | r/- | `Zifencei` extensions available (enabled via _CPU_EXTENSION_RISCV_Zifencei_ generic)
-| 5   | _CPU_MZEXT_ZFINX_ | r/- | `Zfinx` extensions available (enabled via _CPU_EXTENSION_RISCV_Zfinx_ generic)
-| 6   | _CPU_MZEXT_ZXSCNT_ | r/- | custom extension: "Small CPU counters": `cycle[h]` & `instret[h]` CSRs have less than 64-bit when set (when _CPU_CNT_WIDTH_ generic is less than 64)
-| 7   | _CPU_MZEXT_ZXNOCNT_ | r/- | custom extension: "NO CPU counters": `cycle[h]` & `instret[h]` CSRs are not available at all when set (when _CPU_CNT_WIDTH_ generic is 0)
-| 8   | _CSR_MZEXT_PMP_ | r/- | PMP (physical memory protection) extension available (_PMP_NUM_REGIONS_ generic > 0)
-| 9   | _CSR_MZEXT_HPM_ | r/- | HPM (hardware performance monitors) extension available (_HPM_NUM_CNTS_ generic > 0)
-| 10  | _CSR_MZEXT_DEBUGMODE_ | r/- | RISC-V "CPU debug mode" extension available (enabled via _CPU_EXTENSION_RISCV_DEBUG_ generic)
-|=======================

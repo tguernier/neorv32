@@ -10,7 +10,7 @@ ecosystem is based on the RISC-V port of the GCC GNU Compiler Collection and con
 | Application/bootloader start-up code | `sw/common/crt0.S`
 | Application/bootloader linker script | `sw/common/neorv32.ld`
 | Core hardware driver libraries | `sw/lib/include/` & `sw/lib/source/`
-| Makefiles | e.g. `sw/example/blink_led/makefile`
+| Central makefile | `sw/common/common.mk`
 | Auxiliary tool for generating NEORV32 executables | `sw/image_gen/`
 | Default bootloader | `sw/bootloader/bootloader.c`
 |=======================
@@ -66,7 +66,6 @@ files are currently part of the NEORV32 core library:
 | `neorv32_gpio.c`   | `neorv32_gpio.h`       | HW driver functions for the **GPIO**
 | -                  | `neorv32_intrinsics.h` | macros for custom intrinsics/instructions
 | `neorv32_mtime.c`  | `neorv32_mtime.h`      | HW driver functions for the **MTIME**
-| `neorv32_nco.c`    | `neorv32_nco.h`        | HW driver functions for the **NCO**
 | `neorv32_neoled.c` | `neorv32_neoled.h`     | HW driver functions for the **NEOLED**
 | `neorv32_pwm.c`    | `neorv32_pwm.h`        | HW driver functions for the **PWM**
 | `neorv32_rte.c`    | `neorv32_rte.h`        | NEORV32 **runtime environment** and helpers
@@ -90,15 +89,16 @@ The documentation is automatically built and deployed to GitHub pages by the CI 
 :sectnums:
 === Application Makefile
 
-Application compilation is based on **GNU makefiles**. Each project in the `sw/example` folder features
-a makefile. All these makefiles are identical. When creating a new project, copy an existing project folder or
+Application compilation is based on a single, centralized **GNU makefiles** `sw/common/common.mk`. Each project in the
+`sw/example` folder features a makefile that just includes this central makefile. When creating a new project, copy an existing project folder or
 at least the makefile to your new project folder. I suggest to create new projects also in `sw/example` to keep
 the file dependencies. Of course, these dependencies can be manually configured via makefiles variables
 when your project is located somewhere else.
 
+[NOTE]
 Before you can use the makefiles, you need to install the RISC-V GCC toolchain. Also, you have to add the
-installation folder of the compiler to your system's `PATH` variable. More information can be found in chapter
-<<_lets_get_it_started>>.
+installation folder of the compiler to your system's `PATH` variable. More information can be found in
+https://stnolting.github.io/neorv32/ug/#_software_toolchain_setup[User Guide: Software Toolchain Setup].
 
 The makefile is invoked by simply executing make in your console:
 
@@ -110,31 +110,39 @@ neorv32/sw/example/blink_led$ make
 :sectnums:
 ==== Targets
 
-Just executing `make` will show the help menu showing all available targets. The following targets are
-available:
+Just executing `make` (or executing `make help`) will show the help menu listing all available targets.
 
-[cols="<3,<15"]
-[grid="none"]
-|=======================
-| `help` | Show a short help text explaining all available targets.
-| `check` | Check the compiler toolchain. You should run this target at least once after installing the toolchain.
-| `info` | Show the makefile configuration (see section <<_configuration>>).
-| `exe` | Compile all sources and generate application executable for upload via bootloader.
-| `install` | Compile all sources, generate executable (via exe target) for upload via bootloader and generate and install IMEM VHDL initialization image file `rtl/core/neorv32_application_image.vhd`.
-| `all` | Execute `exe` and `install`.
-| `clean` | Remove all generated files in the current folder.
-| `clean_all` | Remove all generated files in the current folder and also removes the compiled core libraries and the compiled image generator tool.
-| `bootloader` | Compile all sources, generate executable and generate and install BOOTROM VHDL initialization image file `rtl/core/neorv32_bootloader_image.vhd`. This target modifies the ROM origin and length in the linker script by setting the `make_bootloader` define.
-| `upload` | Upload NEORV32 executable to the bootloader via serial port
-|=======================
+[source,makefile]
+----
+$ make
+<<< NEORV32 Application Makefile >>>
+Make sure to add the bin folder of RISC-V GCC to your PATH variable.
+Targets:
+ help       - show this text
+ check      - check toolchain
+ info       - show makefile/toolchain configuration
+ exe        - compile and generate <neorv32_exe.bin> executable for upload via bootloader
+ hex        - compile and generate <neorv32_exe.hex> executable raw file
+ install    - compile, generate and install VHDL IMEM boot image (for application)
+ sim        - in-console simulation using the default testbench and GHDL
+ all        - exe + hex + install
+ elf_info   - show ELF layout info
+ clean      - clean up project
+ clean_all  - clean up project, core libraries and image generator
+ bootloader - compile, generate and install VHDL BOOTROM boot image (for bootloader only!)
+----
 
-[TIP]
-An assembly listing file (`main.asm`) is created by the compilation flow for further analysis or debugging purpose.
 
 :sectnums:
 ==== Configuration
 
-The compilation flow is configured via variables right at the beginning of the makefile:
+The compilation flow is configured via variables right at the beginning of the **central**
+makefile (`sw/common/common.mk`):
+
+[TIP]
+The makefile configuration variables can be (re-)defined directly when invoking the makefile. For
+example via `$ make MARCH=-march=rv32ic clean_all exe`. You can also make project-specific definitions
+of all variables inside the project's actual makefile (e.g., `sw/example/blink_led/makefile`).
 
 [source,makefile]
 ----
@@ -151,14 +159,12 @@ ASM_INC ?= -I .
 # Optimization
 EFFORT ?= -Os
 # Compiler toolchain
-RISCV_TOOLCHAIN ?= riscv32-unknown-elf
+RISCV_PREFIX ?= riscv32-unknown-elf-
 # CPU architecture and ABI
 MARCH ?= -march=rv32i
 MABI  ?= -mabi=ilp32
 # User flags for additional configuration (will be added to compiler flags)
 USER_FLAGS ?=
-# Serial port for executable upload via bootloer
-COM_PORT ?= /dev/ttyUSB0
 # Relative or absolute path to the NEORV32 home folder
 NEORV32_HOME ?= ../../..
 # *****************************************************************************
@@ -171,8 +177,8 @@ NEORV32_HOME ?= ../../..
 | _APP_INC_         | Include file folders; separated by white spaces; must be defined with `-I` prefix
 | _ASM_INC_         | Include file folders that are used only for the assembly source files (`*.S`/`*.s`).
 | _EFFORT_          | Optimization level, optimize for size (`-Os`) is default; legal values: `-O0`, `-O1`, `-O2`, `-O3`, `-Os`
-| _RISCV_TOOLCHAIN_ | The toolchain prefix to be used; follows the naming convention "architecture-vendor-output"
-| _MARCH_           | The targetd RISC-V architecture/ISA. Only `rv32` is supported by the NEORV32. Enable compiler support of optional CPU extension by adding the according extension letter (e.g. `rv32im` for _M_ CPU extension). See section <<_enabling_risc_v_cpu_extensions>>.
+| _RISCV_PREFIX_    | The toolchain prefix to be used; follows the naming convention "architecture-vendor-output-"
+| _MARCH_           | The targetd RISC-V architecture/ISA. Only `rv32` is supported by the NEORV32. Enable compiler support of optional CPU extension by adding the according extension letter (e.g. `rv32im` for _M_ CPU extension). See https://stnolting.github.io/neorv32/ug/#_enabling_risc_v_cpu_extensions[User Guide: Enabling RISC-V CPU Extensions] for more information.
 | _MABI_            | The default 32-bit integer ABI.
 | _USER_FLAGS_      | Additional flags that will be forwarded to the compiler tools
 | _NEORV32_HOME_    | Relative or absolute path to the NEORV32 project home folder. Adapt this if the makefile/project is not in the project's `sw/example folder`.
@@ -201,10 +207,6 @@ The following default compiler flags are used for compiling an application. Thes
 | `-falign-loops=4`
 | `-falign-jumps=4`
 |=======================
-
-[TIP]
-The makefile configuration variables can be (re-)defined directly when invoking the makefile. For
-example: `$ make MARCH=-march=rv32ic clean_all exe`
 
 
 
@@ -283,7 +285,7 @@ These four regions contain everything required for the application to run:
 [cols="<1,<9"]
 [options="header",grid="rows"]
 |=======================
-| Region    | Description 
+| Region    | Description
 | `.text`   | Executable instructions generated from the start-up code and all application sources.
 | `.rodata` | Constants (like strings) from the application; also the initial data for initialized variables.
 | `.data`   | This section is required for the address generation of fixed (= global) variables only.
@@ -309,6 +311,7 @@ The image generator can generate three types of executables, selected by a flag 
 [grid="none"]
 |=======================
 | `-app_bin` | Generates an executable binary file `neorv32_exe.bin` (for UART uploading via the bootloader).
+| `-app_hex` | Generates a plain ASCII hex-char file `neorv32_exe.hex` that can be used to initialize custom (instruction-) memories (in synthesis/simulation).
 | `-app_img` | Generates an executable VHDL memory initialization image for the processor-internal IMEM. This option generates the `rtl/core/neorv32_application_image.vhd` file.
 | `-bld_img` | Generates an executable VHDL memory initialization image for the processor-internal BOOT ROM. This option generates the `rtl/core/neorv32_bootloader_image.vhd` file.
 |=======================
@@ -354,11 +357,13 @@ already initialized within the application or you have to initialize them _insid
 .After-main handler - function prototype
 [source,c]
 ----
-void __neorv32_crt0_after_main(int32_t return_code);
+int __neorv32_crt0_after_main(int32_t return_code);
 ----
 
 The function has exactly one argument (`return_code`) that provides the _return value_ of the application's main function.
-For instance, this variable contains _-1_ if the main function returned with `return -1;`.
+For instance, this variable contains _-1_ if the main function returned with `return -1;`. The return value of the
+`__neorv32_crt0_after_main` function is irrelevant as there is no further "software instance" executed afterwards that can check this.
+However, the on-chip debugger could still evaluate the return value of the after-main handler.
 
 A simple `printf` can be used to inform the user when the application main function return
 (this example assumes that UART0 has been already properly configured in the actual application):
@@ -366,9 +371,10 @@ A simple `printf` can be used to inform the user when the application main funct
 .After-main handler - example
 [source,c]
 ----
-void __neorv32_crt0_after_main(int32_t return_code) {
+int __neorv32_crt0_after_main(int32_t return_code) {
 
   neorv32_uart_printf("Main returned with code: %i\n", return_code);
+  return 0;
 }
 ----
 
@@ -378,32 +384,41 @@ void __neorv32_crt0_after_main(int32_t return_code) {
 :sectnums:
 === Bootloader
 
-The default bootloader (sw/bootloader/bootloader.c) of the NEORV32 processor allows to upload
-new program executables at every time. If there is an external SPI flash connected to the processor (like the
-FPGA's configuration memory), the bootloader can store the program executable to it. After reset, the
-bootloader can directly boot from the flash without any user interaction.
+[NOTE]
+This section illustrated the **default** bootloader from the repository. The bootloader can be customized
+to target application-specific scenarios. See User Guide section
+https://stnolting.github.io/neorv32/ug/#_customizing_the_internal_bootloader[Customizing the Internal Bootloader]
+for more information.
 
-[WARNING]
-The bootloader is only implemented when the _INT_BOOTLOADER_EN_ generic is true and requires the
-CSR access CPU extension (_CPU_EXTENSION_RISCV_Zicsr_ generic is true).
+The default NEORV32 bootloader (source code `sw/bootloader/bootloader.c`) provides a build-in firmware that
+allows to upload new application executables via UART at every time and to optionally store/boot them to/from
+an external SPI flash. It features a simple "automatic boot" feature that will try to fetch an executable
+from SPI flash if there is _no_ UART user interaction. This allows to build processor setup with
+non-volatile application storage, which can be updated at any time.
 
-.Requirements
+The bootloader is only implemented if the <<_int_bootloader_en>> generic is _true_. This will
+select the <<_indirect_boot>> boot configuration.
+
+.Hardware requirements of the _default_ NEORV32 bootloader
 [IMPORTANT]
-The default bootloader requires the primary UART (UART0) for user interaction (_IO_UART0_EN_ generic is _true_).
-Furthermore, the bootloader requires at least 512 bytes of data memory (processor-internal DMEM or external DMEM). +
+**REQUIRED**: The bootloader requires the CSR access CPU extension (<<_cpu_extension_riscv_zicsr>> generic is _true_)
+and at least 512 bytes of data memory (processor-internal DMEM or external DMEM). +
  +
-The auto-boot feature, which is optional, requires the machine timer (MTIME; _IO_MTIME_EN_ generic is _true_)
-and the SPI controller (_IO_SPI_EN_ generic is _true_) when used.
-
-[IMPORTANT]
-For the automatic boot from an SPI flash, the SPI controller has to be implemented (_IO_SPI_EN_
-generic is _true_) and the machine system timer MTIME has to be implemented (_IO_MTIME_EN_
-generic is _true_), too, to allow an auto-boot timeout counter.
+_RECOMMENDED_: For user interaction via UART (like uploading executables) the primary UART (UART0) has to be
+implemented (<<_io_uart0_en>> generic is _true_). Without UART the bootloader does not make much sense. However, auto-boot
+via SPI is still supported but the bootloader should be customized (see User Guide) for this purpose. +
+ +
+_OPTIONAL_: The default bootloader uses bit 0 of the GPIO output port as "heart beat" and status LED if the
+GPIO controller is implemented (<<_io_gpio_en>> generic is _true_). +
+ +
+_OPTIONAL_: The MTIME machine timer (<<_io_mtime_en>> generic is _true_) and the SPI controller
+(<<_io_spi_en>> generic is _true_) are required in order to use the bootloader's auto-boot feature
+(automatic boot from external SPI flash if there is no user interaction via UART).
 
 To interact with the bootloader, connect the primary UART (UART0) signals (`uart0_txd_o` and
 `uart0_rxd_o`) of the processor's top entity via a serial port (-adapter) to your computer (hardware flow control is
 not used so the according interface signals can be ignored.), configure your
-terminal program using the following settings and perform a reset of the processor. 
+terminal program using the following settings and perform a reset of the processor.
 
 Terminal console settings (`19200-8-N-1`):
 
@@ -425,7 +440,6 @@ following intro screen should show up in your terminal:
 BLDV: Mar 23 2021
 HWV:  0x01050208
 CLK:  0x05F5E100
-USER: 0x10000DE0
 MISA: 0x40901105
 ZEXT: 0x00000023
 PROC: 0x0EFF0037
@@ -442,11 +456,10 @@ This start-up screen also gives some brief information about the bootloader and 
 |=======================
 | `BLDV` | Bootloader version (built date).
 | `HWV`  | Processor hardware version (from the `mimpid` CSR) in BCD format (example: `0x01040606` = v1.4.6.6).
-| `USER` | Custom user code (from the _USER_CODE_ generic).
 | `CLK`  | Processor clock speed in Hz (via the SYSINFO module, from the _CLOCK_FREQUENCY_ generic).
 | `MISA` | CPU extensions (from the `misa` CSR).
-| `ZEXT` | CPU sub-extensions (from the `mzext` CSR)
-| `PROC` | Processor configuration (via the SYSINFO module, from the IO_* and MEM_* configuration generics).
+| `ZEXT` | CPU sub-extensions (via the _SYSINFO_CPU_ register in the SYSINFO module)
+| `PROC` | Processor configuration (via the _SYSINFO_FEATURES_ register in the SYSINFO module / from the IO_* and MEM_* configuration generics).
 | `IMEM` | IMEM memory base address and size in byte (from the _MEM_INT_IMEM_SIZE_ generic).
 | `DMEM` | DMEM memory base address and size in byte (from the _MEM_INT_DMEM_SIZE_ generic).
 |=======================
@@ -490,7 +503,6 @@ corresponding operation:
 * `s`: Store executable to SPI flash at `spi_csn_o(0)`
 * `l`: Load executable from SPI flash at `spi_csn_o(0)`
 * `e`: Start the application, which is currently stored in the instruction memory (IMEM)
-* `#`: Shortcut for executing u and e afterwards (not shown in help menu)
 
 A new executable can be uploaded via UART by executing the `u` command. After that, the executable can be directly
 executed via the `e` command. To store the recently uploaded executable to an attached SPI flash press `s`. To
@@ -501,61 +513,18 @@ manually restarted via the `r` command.
 The CPU is in machine level privilege mode after reset. When the bootloader boots an application,
 this application is also started in machine level privilege mode.
 
-:sectnums:
-==== External SPI Flash for Booting
-
-If you want the NEORV32 bootloader to automatically fetch and execute an application at system start, you
-can store it to an external SPI flash. The advantage of the external memory is to have a non-volatile program
-storage, which can be re-programmed at any time just by executing some bootloader commands. Thus, no
-FPGA bitstream recompilation is required at all.
-
-**SPI Flash Requirements**
-
-The bootloader can access an SPI compatible flash via the processor top entity's SPI port and connected to
-chip select `spi_csn_o(0)`. The flash must be capable of operating at least at 1/8 of the processor's main
-clock. Only single read and write byte operations are used. The address has to be 24 bit long. Furthermore,
-the SPI flash has to support at least the following commands:
-
-* READ (`0x03`)
-* READ STATUS (`0x05`)
-* WRITE ENABLE (`0x06`)
-* PAGE PROGRAM (`0x02`)
-* SECTOR ERASE (`0xD8`)
-* READ ID (`0x9E`)
-
-Compatible (FGPA configuration) SPI flash memories are for example the "Winbond W25Q64FV2 or the "Micron N25Q032A".
-
-**SPI Flash Configuration**
-
-The base address `SPI_FLASH_BOOT_ADR` for the executable image inside the SPI flash is defined in the
-"user configuration" section of the bootloader source code (`sw/bootloader/bootloader.c`). Most
-FPGAs that use an external configuration flash, store the golden configuration bitstream at base address 0.
-Make sure there is no address collision between the FPGA bitstream and the application image. You need to
-change the default sector size if your flash has a sector size greater or less than 64kB:
-
-[source,c]
-----
-/** SPI flash boot image base address */
-#define SPI_FLASH_BOOT_ADR 0x00800000
-/** SPI flash sector size in bytes */
-#define SPI_FLASH_SECTOR_SIZE (64*1024)
-----
-
 [TIP]
-More information regarding customization of the bootloader can be found in section
-https://stnolting.github.io/neorv32/ug/#_customizing_the_internal_bootloader[Customizing the Internal Bootloader]
-of the NEORV32 user guide. This guide also provides a tutorial how to program an external SPI flash
-to automatically boot from it after reset (
-https://stnolting.github.io/neorv32/ug/#_programming_an_external_spi_flash_via_the_bootloader[Programming an External SPI Flash via the Bootloader]).
+For detailed information on using an SPI flash for application storage see User Guide section
+https://stnolting.github.io/neorv32/ug/#_programming_an_external_spi_flash_via_the_bootloader[Programming an External SPI Flash via the Bootloader].
 
 
 :sectnums:
 ==== Auto Boot Sequence
-When you reset the NEORV32 processor, the bootloader waits 8 seconds for a user console input before it
+When you reset the NEORV32 processor, the bootloader waits 8 seconds for a UART console input before it
 starts the automatic boot sequence. This sequence tries to fetch a valid boot image from the external SPI
-flash, connected to SPI chip select `spi_csn_o(0)`. If a valid boot image is found and can be successfully
-transferred into the instruction memory, it is automatically started. If no SPI flash was detected or if there
-was no valid boot image found, the bootloader stalls and the status LED is permanently activated.
+flash, connected to SPI chip select `spi_csn_o(0)`. If a valid boot image is found that can be successfully
+transferred into the instruction memory, it is automatically started. If no SPI flash is detected or if there
+is no valid boot image found, and error code will be shown.
 
 
 :sectnums:
@@ -563,17 +532,15 @@ was no valid boot image found, the bootloader stalls and the status LED is perma
 
 If something goes wrong during bootloader operation, an error code is shown. In this case the processor
 stalls, a bell command and one of the following error codes are send to the terminal, the bootloader status
-LED is permanently activated and the system must be reset manually.
+LED is permanently activated and the system must be manually reset.
 
 [cols="<2,<13"]
 [grid="rows"]
 |=======================
-| **`ERROR_0`** | If you try to transfer an invalid executable (via UART or from the external SPI flash), this error message shows up. There might be a transfer protocol configuration error in the terminal program. See section <<_uploading_and_starting_of_a_binary_executable_image_via_uart>> for more information. Also, if no SPI flash was found during an auto-boot attempt, this message will be displayed.
-| **`ERROR_1`** | Your program is way too big for the internal processor’s instructions memory. Increase the memory size or reduce (optimize!) your application code.
+| **`ERROR_0`** | If you try to transfer an invalid executable (via UART or from the external SPI flash), this error message shows up. There might be a transfer protocol configuration error in the terminal program. Also, if no SPI flash was found during an auto-boot attempt, this message will be displayed.
+| **`ERROR_1`** | Your program is way too big for the internal processor’s instructions memory. Increase the memory size or reduce your application code.
 | **`ERROR_2`** | This indicates a checksum error. Something went wrong during the transfer of the program image (upload via UART or loading from the external SPI flash). If the error was caused by a UART upload, just try it again. When the error was generated during a flash access, the stored image might be corrupted.
 | **`ERROR_3`** | This error occurs if the attached SPI flash cannot be accessed. Make sure you have the right type of flash and that it is properly connected to the NEORV32 SPI port using chip select #0.
-| **`ERROR_4`** | This error pops up when an unexpected exception or interrupt was triggered. The cause of the trap (`mcause` CSR) is displayed for further investigation. This might be caused if an ISA extension is used that has not been synthesized.
-| **`ERROR_?`** | Something really bad happened when there is no specific error code available :(
 |=======================
 
 

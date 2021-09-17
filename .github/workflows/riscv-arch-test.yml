@@ -9,6 +9,15 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+        - I
+        - C
+        - M
+        - privilege
+        - Zifencei
     name: 'RISC-V Compatibility Check'
 
     steps:
@@ -34,4 +43,4 @@ jobs:
           backend: gcc
 
       - name: '⚙️ Run RISC-V Architecture Tests'
-        run: ./riscv-arch-test/run_riscv_arch_test.sh
+        run: ./sim/run_riscv_arch_test.sh ${{ matrix.suite }}

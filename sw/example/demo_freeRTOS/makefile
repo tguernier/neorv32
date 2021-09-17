@@ -50,7 +50,7 @@ ASM_INC ?= -I .
 EFFORT ?= -Os
 
 # Compiler toolchain
-RISCV_TOOLCHAIN ?= riscv32-unknown-elf
+RISCV_PREFIX ?= riscv32-unknown-elf-
 
 # CPU architecture and ABI
 MARCH ?= -march=rv32i
@@ -59,9 +59,6 @@ MABI  ?= -mabi=ilp32
 # User flags for additional configuration (will be added to compiler flags)
 USER_FLAGS ?=
 
-# Serial port for executable upload via bootloer
-COM_PORT ?= /dev/ttyUSB0
-
 # Relative or absolute path to the NEORV32 home folder
 NEORV32_HOME ?= ../../..
 # *****************************************************************************
@@ -69,270 +66,79 @@ NEORV32_HOME ?= ../../..
 
 
 # -----------------------------------------------------------------------------
-# NEORV32 framework
+# FreeRTOS
 # -----------------------------------------------------------------------------
-# Path to NEORV32 linker script and startup file
-NEORV32_COM_PATH = $(NEORV32_HOME)/sw/common
-# Path to main NEORV32 library include files
-NEORV32_INC_PATH = $(NEORV32_HOME)/sw/lib/include
-# Path to main NEORV32 library source files
-NEORV32_SRC_PATH = $(NEORV32_HOME)/sw/lib/source
-# Path to NEORV32 executable generator
-NEORV32_EXG_PATH = $(NEORV32_HOME)/sw/image_gen
-# Path to NEORV32 core rtl folder
-NEORV32_RTL_PATH = $(NEORV32_HOME)/rtl/core
-# Marker file to check for NEORV32 home folder
-NEORV32_HOME_MARKER = $(NEORV32_INC_PATH)/neorv32.h
+ifneq (,$(findstring RUN_FREERTOS_DEMO,$(USER_FLAGS)))
+# FreeRTOS home folder (adapt this!)
+FREERTOS_HOME ?= /mnt/n/Projects/FreeRTOSv10.4.1
 
-# Core libraries (peripheral and CPU drivers)
-CORE_SRC  = $(wildcard $(NEORV32_SRC_PATH)/*.c)
-# Application start-up code
-CORE_SRC += $(NEORV32_COM_PATH)/crt0.S
+# FreeRTOS RISC-V specific
+APP_SRC += $(wildcard $(FREERTOS_HOME)/FreeRTOS/Source/portable/GCC/RISC-V/*.c)
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Source/portable/GCC/RISC-V/portASM.S
 
-# Linker script
-LD_SCRIPT = $(NEORV32_COM_PATH)/neorv32.ld
+APP_INC += -I $(FREERTOS_HOME)/FreeRTOS/Source/portable/GCC/RISC-V
 
-# Main output files
-APP_EXE  = neorv32_exe.bin
-APP_ASM  = main.asm
-APP_IMG  = neorv32_application_image.vhd
-BOOT_IMG = neorv32_bootloader_image.vhd
+# FreeRTOS core
+APP_SRC += $(wildcard $(FREERTOS_HOME)/FreeRTOS/Source/*.c)
+APP_SRC += $(wildcard $(FREERTOS_HOME)/FreeRTOS/Source/portable/MemMang/heap_4.c)
 
+APP_INC += -I $(FREERTOS_HOME)/FreeRTOS/Source/include
 
-# -----------------------------------------------------------------------------
-# Sources and objects
-# -----------------------------------------------------------------------------
-# Define all sources
-SRC  = $(APP_SRC)
-SRC += $(CORE_SRC)
+# FreeRTOS sources for the full_demo
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/blocktim.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/dynamic.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/EventGroupsDemo.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/GenQTest.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/recmutex.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/TaskNotify.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/TaskNotifyArray.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS/Demo/Common/Minimal/TimerDemo.c
 
-# Define all object files
-OBJ = $(SRC:%=%.o)
+APP_INC += -I $(FREERTOS_HOME)/FreeRTOS/Demo/Common/include
 
+# NEORV32 specific
+ASM_INC += -DportasmHANDLE_INTERRUPT=SystemIrqHandler
 
-# -----------------------------------------------------------------------------
-# Tools and flags
-# -----------------------------------------------------------------------------
-# Compiler tools
-CC      = $(RISCV_TOOLCHAIN)-gcc
-OBJDUMP = $(RISCV_TOOLCHAIN)-objdump
-OBJCOPY = $(RISCV_TOOLCHAIN)-objcopy
-SIZE    = $(RISCV_TOOLCHAIN)-size
+APP_INC += -I chip_specific_extensions/neorv32
 
-# Host native compiler
-CC_X86 = g++ -Wall -O -g
+ASM_INC += -I chip_specific_extensions/neorv32
 
-# NEORV32 executable image generator
-IMAGE_GEN = $(NEORV32_EXG_PATH)/image_gen
-
-# Compiler & linker flags
-CC_OPTS  = $(MARCH) $(MABI) $(EFFORT) -Wall -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
-CC_OPTS += -Wl,--gc-sections -lm -lc -lgcc -lc
-# This accelerates instruction fetch after branches when C extension is enabled (irrelevant when C extension is disabled)
-CC_OPTS += -falign-functions=4 -falign-labels=4 -falign-loops=4 -falign-jumps=4
-CC_OPTS += $(USER_FLAGS)
-
-
-# -----------------------------------------------------------------------------
-# Application output definitions
-# -----------------------------------------------------------------------------
-.PHONY: check info help elf_info clean clean_all bootloader
-.DEFAULT_GOAL := help
-
-# 'compile' is still here for compatibility
-exe:     $(APP_ASM) $(APP_EXE)
-compile: $(APP_ASM) $(APP_EXE)
-install: $(APP_ASM) $(APP_IMG)
-all:     $(APP_ASM) $(APP_EXE) $(APP_IMG)
-
-# Check if making bootloader
-# Use different base address and legth for instruction memory/"rom" (BOOTMEM instead of IMEM)
-# Also define "make_bootloader" for crt0.S
-target bootloader: CC_OPTS += -Wl,--defsym=make_bootloader=1 -Dmake_bootloader
-
-
-# -----------------------------------------------------------------------------
-# Image generator targets
-# -----------------------------------------------------------------------------
-# install/compile tools
-$(IMAGE_GEN): $(NEORV32_EXG_PATH)/image_gen.cpp
-	@echo Compiling $(IMAGE_GEN)
-	@$(CC_X86) $< -o $(IMAGE_GEN)
-
-
-# -----------------------------------------------------------------------------
-# General targets: Assemble, compile, link, dump
-# -----------------------------------------------------------------------------
-# Compile app *.s sources (assembly)
-%.s.o: %.s
-	@$(CC) -c $(CC_OPTS) -I $(NEORV32_INC_PATH) $(ASM_INC) $< -o $@
-
-# Compile app *.S sources (assembly + C pre-processor)
-%.S.o: %.S
-	@$(CC) -c $(CC_OPTS) -I $(NEORV32_INC_PATH) $(ASM_INC) $< -o $@
-
-# Compile app *.c sources
-%.c.o: %.c
-	@$(CC) -c $(CC_OPTS) -I $(NEORV32_INC_PATH) $(APP_INC) $< -o $@
-
-# Compile app *.cpp sources
-%.cpp.o: %.cpp
-	@$(CC) -c $(CC_OPTS) -I $(NEORV32_INC_PATH) $(APP_INC) $< -o $@
-
-# Link object files and show memory utilization
-main.elf: $(OBJ)
-	@$(CC) $(CC_OPTS) -T $(LD_SCRIPT) $(OBJ) -o $@ -lm
-	@echo "Memory utilization:"
-	@$(SIZE) main.elf
-
-# Assembly listing file (for debugging)
-$(APP_ASM): main.elf
-	@$(OBJDUMP) -d -S -z  $< > $@
-
-# Generate final executable from .text + .rodata + .data (in THIS order!)
-main.bin: main.elf $(APP_ASM)
-	@$(OBJCOPY) -I elf32-little $< -j .text   -O binary text.bin
-	@$(OBJCOPY) -I elf32-little $< -j .rodata -O binary rodata.bin
-	@$(OBJCOPY) -I elf32-little $< -j .data   -O binary data.bin
-	@cat text.bin rodata.bin data.bin > $@
-	@rm -f text.bin rodata.bin data.bin
-
-
-# -----------------------------------------------------------------------------
-# Application targets: Generate binary executable, install (as VHDL file)
-# -----------------------------------------------------------------------------
-# Generate NEORV32 executable image for upload via bootloader
-$(APP_EXE): main.bin $(IMAGE_GEN)
-	@set -e
-	@$(IMAGE_GEN) -app_bin $< $@ $(shell basename $(CURDIR))
-	@echo "Executable ($(APP_EXE)) size in bytes:"
-	@wc -c < $(APP_EXE)
-
-# Generate NEORV32 executable VHDL boot image
-$(APP_IMG): main.bin $(IMAGE_GEN)
-	@set -e
-	@$(IMAGE_GEN) -app_img $< $@ $(shell basename $(CURDIR))
-	@echo "Installing application image to $(NEORV32_RTL_PATH)/$(APP_IMG)"
-	@cp $(APP_IMG) $(NEORV32_RTL_PATH)/.
-
-
-# -----------------------------------------------------------------------------
-# Bootloader targets
-# -----------------------------------------------------------------------------
-# Create and install bootloader VHDL init image
-$(BOOT_IMG): main.bin $(IMAGE_GEN)
-	@set -e
-	@$(IMAGE_GEN) -bld_img $< $(BOOT_IMG) $(shell basename $(CURDIR))
-	@echo "Installing bootloader image to $(NEORV32_RTL_PATH)/$(BOOT_IMG)"
-	@cp $(BOOT_IMG) $(NEORV32_RTL_PATH)/.
-
-# Just an alias that
-bootloader: $(BOOT_IMG)
-
-
-# -----------------------------------------------------------------------------
-# Check toolchain
-# -----------------------------------------------------------------------------
-check: $(IMAGE_GEN)
-	@echo "---------------- Check: NEORV32_HOME folder ----------------"
-ifneq ($(shell [ -e $(NEORV32_HOME_MARKER) ] && echo 1 || echo 0 ), 1)
-$(error NEORV32_HOME folder not found!)
+# Demo application
+APP_SRC += blinky_demo/main_blinky.c
+APP_SRC += full_demo/main_full.c
+APP_SRC += full_demo/RegTest.s
 endif
-	@echo "NEORV32_HOME: $(NEORV32_HOME)"
-	@echo "---------------- Check: $(CC) ----------------"
-	@$(CC) -v
-	@echo "---------------- Check: $(OBJDUMP) ----------------"
-	@$(OBJDUMP) -V
-	@echo "---------------- Check: $(OBJCOPY) ----------------"
-	@$(OBJCOPY) -V
-	@echo "---------------- Check: $(SIZE) ----------------"
-	@$(SIZE) -V
-	@echo "---------------- Check: NEORV32 image_gen ----------------"
-	@$(IMAGE_GEN) -help
-	@echo "---------------- Check: Native GCC ----------------"
-	@$(CC_X86) -v
-	@echo
-	@echo "Toolchain check OK"
+
+# -----------------
+# FreeRTOS-Plus-CLI
+# -----------------
+ifneq (,$(findstring FREERTOS_PLUS_CLI,$(USER_FLAGS)))
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-CLI/FreeRTOS_CLI.c
+
+APP_INC += -I $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-CLI
+endif
+
+# -----------------
+# FreeRTOS-Plus-TCP
+# -----------------
+ifneq (,$(findstring FREERTOS_PLUS_TCP,$(USER_FLAGS)))
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_ARP.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_DHCP.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_DNS.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_IP.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_Sockets.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_Stream_Buffer.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_TCP_IP.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_TCP_WIN.c
+APP_SRC += $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/FreeRTOS_UDP_IP.c
+
+APP_INC += -I $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/include
+APP_INC += -I $(FREERTOS_HOME)/FreeRTOS-Plus/Source/FreeRTOS-Plus-TCP/portable/Compiler/GCC
+endif
 
 
-# -----------------------------------------------------------------------------
-# Upload executable via serial port to bootloader
-# -----------------------------------------------------------------------------
-upload: $(APP_EXE)
-	@sh $(NEORV32_EXG_PATH)/uart_upload.sh $(COM_PORT) $(APP_EXE)
 
+NEORV32_HOME ?= ../../..
 
-# -----------------------------------------------------------------------------
-# Show configuration
-# -----------------------------------------------------------------------------
-info:
-	@echo "---------------- Info: Project ----------------"
-	@echo "Project folder:        $(shell basename $(CURDIR))"
-	@echo "Source files:          $(APP_SRC)"
-	@echo "Include folder(s):     $(APP_INC)"
-	@echo "ASM include folder(s): $(ASM_INC)"
-	@echo "---------------- Info: NEORV32 ----------------"
-	@echo "NEORV32 home folder (NEORV32_HOME): $(NEORV32_HOME)"
-	@echo "IMAGE_GEN: $(IMAGE_GEN)"
-	@echo "Core source files:"
-	@echo "$(CORE_SRC)"
-	@echo "Core include folder:"
-	@echo "$(NEORV32_INC_PATH)"
-	@echo "---------------- Info: Objects ----------------"
-	@echo "Project object files:"
-	@echo "$(OBJ)"
-	@echo "---------------- Info: RISC-V CPU ----------------"
-	@echo "MARCH:      $(MARCH)"
-	@echo "MABI:       $(MABI)"
-	@echo "---------------- Info: Toolchain ----------------"
-	@echo "Toolchain:  $(RISCV_TOLLCHAIN)"
-	@echo "CC:         $(CC)"
-	@echo "OBJDUMP:    $(OBJDUMP)"
-	@echo "OBJCOPY:    $(OBJCOPY)"
-	@echo "SIZE:       $(SIZE)"
-	@echo "---------------- Info: Compiler Libraries ----------------"
-	@echo "LIBGCC:"
-	@$(CC) -print-libgcc-file-name
-	@echo "SEARCH-DIRS:"
-	@$(CC) -print-search-dirs
-	@echo "---------------- Info: Flags ----------------"
-	@echo "USER_FLAGS: $(USER_FLAGS)"
-	@echo "CC_OPTS:    $(CC_OPTS)"
-	@echo "---------------- Info: Host Native GCC Flags ----------------"
-	@echo "CC_X86:     $(CC_X86)"
-
-
-# -----------------------------------------------------------------------------
-# Show final ELF details (just for debugging)
-# -----------------------------------------------------------------------------
-elf_info: main.elf
-	@$(OBJDUMP) -x main.elf
-
-
-# -----------------------------------------------------------------------------
-# Help
-# -----------------------------------------------------------------------------
-help:
-	@echo "<<< NEORV32 Application Makefile >>>"
-	@echo "Make sure to add the bin folder of RISC-V GCC to your PATH variable."
-	@echo "Targets:"
-	@echo " help       - show this text"
-	@echo " check      - check toolchain"
-	@echo " info       - show makefile/toolchain configuration"
-	@echo " exe        - compile and generate <neorv32_exe.bin> executable for upload via bootloader"
-	@echo " install    - compile, generate and install VHDL IMEM boot image (for application)"
-	@echo " all        - compile and generate <neorv32_exe.bin> executable for upload via bootloader and generate and install VHDL IMEM boot image (for application)"
-	@echo " clean      - clean up project"
-	@echo " clean_all  - clean up project, core libraries and image generator"
-	@echo " bootloader - compile, generate and install VHDL BOOTROM boot image (for bootloader only!)"
-	@echo " upload     - upload <neorv32_exe.bin> executable via serial port <COM_PORT> to bootloader"
-
-
-# -----------------------------------------------------------------------------
-# Clean up
-# -----------------------------------------------------------------------------
-clean:
-	@rm -f *.elf *.o *.bin *.out *.asm *.vhd
-
-clean_all: clean
-	@rm -f $(OBJ) $(IMAGE_GEN)
+# Include central makefile
+include ../../common/common.mk

@@ -44,11 +44,13 @@ use neorv32.neorv32_package.all;
 entity neorv32_cpu_alu is
   generic (
     -- RISC-V CPU Extensions --
-    CPU_EXTENSION_RISCV_M     : boolean := false; -- implement mul/div extension?
-    CPU_EXTENSION_RISCV_Zfinx : boolean := false; -- implement 32-bit floating-point extension (using INT reg!)
+    CPU_EXTENSION_RISCV_M     : boolean; -- implement mul/div extension?
+    CPU_EXTENSION_RISCV_Zbb   : boolean; -- implement basic bit-manipulation sub-extension?
+    CPU_EXTENSION_RISCV_Zmmul : boolean; -- implement multiply-only M sub-extension?
+    CPU_EXTENSION_RISCV_Zfinx : boolean; -- implement 32-bit floating-point extension (using INT reg!)
     -- Extension Options --
-    FAST_MUL_EN               : boolean := false; -- use DSPs for M extension's multiplier
-    FAST_SHIFT_EN             : boolean := false  -- use barrel shifter for shift operations
+    FAST_MUL_EN               : boolean; -- use DSPs for M extension's multiplier
+    FAST_SHIFT_EN             : boolean  -- use barrel shifter for shift operations
   );
   port (
     -- global control --
@@ -293,10 +295,11 @@ begin
   -- Co-Processor 1: Integer Multiplication/Division ('M' Extension) ------------------------
   -- -------------------------------------------------------------------------------------------
   neorv32_cpu_cp_muldiv_inst_true:
-  if (CPU_EXTENSION_RISCV_M = true) generate
+  if (CPU_EXTENSION_RISCV_M = true) or (CPU_EXTENSION_RISCV_Zmmul = true) generate
     neorv32_cpu_cp_muldiv_inst: neorv32_cpu_cp_muldiv
     generic map (
-      FAST_MUL_EN => FAST_MUL_EN  -- use DSPs for faster multiplication
+      FAST_MUL_EN => FAST_MUL_EN,          -- use DSPs for faster multiplication
+      DIVISION_EN => CPU_EXTENSION_RISCV_M -- implement divider hardware
     )
     port map (
       -- global control --
@@ -314,16 +317,41 @@ begin
   end generate;
 
   neorv32_cpu_cp_muldiv_inst_false:
-  if (CPU_EXTENSION_RISCV_M = false) generate
+  if (CPU_EXTENSION_RISCV_M = false) and (CPU_EXTENSION_RISCV_Zmmul = false) generate
     cp_result(1) <= (others => '0');
     cp_valid(1)  <= cp_start(1); -- to make sure CPU does not get stalled if there is an accidental access
   end generate;
 
 
-  -- Co-Processor 2: reserved ---------------------------------------------------------------
+  -- Co-Processor 2: Bit-Manipulation Unit ('Zbb' Extension) --------------------------------
   -- -------------------------------------------------------------------------------------------
-  cp_result(2) <= (others => '0');
-  cp_valid(2)  <= cp_start(2); -- to make sure CPU does not get stalled if there is an accidental access
+  neorv32_cpu_cp_bitmanip_inst_true:
+  if (CPU_EXTENSION_RISCV_Zbb = true) generate
+    neorv32_cpu_cp_bitmanip_inst: neorv32_cpu_cp_bitmanip
+    generic map (
+      FAST_SHIFT_EN => FAST_SHIFT_EN -- use barrel shifter for shift operations
+    )
+    port map (
+      -- global control --
+      clk_i    => clk_i,        -- global clock, rising edge
+      rstn_i   => rstn_i,       -- global reset, low-active, async
+      ctrl_i   => ctrl_i,       -- main control bus
+      start_i  => cp_start(2),  -- trigger operation
+      -- data input --
+      cmp_i    => cmp_i,        -- comparator status
+      rs1_i    => rs1_i,        -- rf source 1
+      rs2_i    => rs2_i,        -- rf source 2
+      -- result and status --
+      res_o    => cp_result(2), -- operation result
+      valid_o  => cp_valid(2)   -- data output valid
+    );
+  end generate;
+
+  neorv32_cpu_cp_bitmanip_inst_false:
+  if (CPU_EXTENSION_RISCV_Zbb = false) generate
+    cp_result(2) <= (others => '0');
+    cp_valid(2)  <= cp_start(2); -- to make sure CPU does not get stalled if there is an accidental access
+  end generate;
 
 
   -- Co-Processor 3: Single-Precision Floating-Point Unit ('Zfinx' Extension) ---------------

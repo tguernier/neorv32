@@ -51,7 +51,7 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_cpu_regfile is
   generic (
-    CPU_EXTENSION_RISCV_E : boolean := false -- implement embedded RF extension?
+    CPU_EXTENSION_RISCV_E : boolean -- implement embedded RF extension?
   );
   port (
     -- global control --
@@ -85,7 +85,6 @@ architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
   signal reg_file_emb : reg_file_emb_t;
   signal rf_wdata     : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- actual write-back data
   signal rd_is_r0     : std_ulogic; -- writing to r0?
-  signal rf_we        : std_ulogic;
   signal dst_addr     : std_ulogic_vector(4 downto 0); -- destination address
   signal opa_addr     : std_ulogic_vector(4 downto 0); -- rs1/dst address
   signal opb_addr     : std_ulogic_vector(4 downto 0); -- rs2 address
@@ -96,16 +95,25 @@ architecture neorv32_cpu_regfile_rtl of neorv32_cpu_regfile is
   signal cmp_opx : std_ulogic_vector(data_width_c downto 0);
   signal cmp_opy : std_ulogic_vector(data_width_c downto 0);
 
-  -- temp ALU var
-  -- TODO: add DIFT tag
-  signal alu_tmp : std_ulogic_vector(dift_bus_w_c-1 downto 0);
-
 begin
 
   -- Data Input Mux -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  alu_tmp <= alu_tag_i & alu_i;
-  rf_wdata <= alu_tmp when (ctrl_i(ctrl_rf_in_mux_c) = '0') else mem_i;
+  input_mux: process(rd_is_r0, ctrl_i, alu_i, mem_i)
+  begin
+    if (rd_is_r0 = '1') then -- write zero if accessing x0 to "emulate" it is hardwired to zero
+      rf_wdata <= (others => '0');
+    else
+      if (ctrl_i(ctrl_rf_in_mux_c) = '0') then
+        rf_wdata <= alu_tag_i & alu_i;
+      else
+        rf_wdata <= mem_i;
+      end if;
+    end if;
+  end process input_mux;
+
+  -- check if we are writing to x0 --
+  rd_is_r0 <= (not or_reduce_f(dst_addr(4 downto 0))) when (CPU_EXTENSION_RISCV_E = false) else (not or_reduce_f(dst_addr(3 downto 0)));
 
 
   -- Register File Access -------------------------------------------------------------------
@@ -114,7 +122,7 @@ begin
   begin
     if rising_edge(clk_i) then -- sync read and write
       if (CPU_EXTENSION_RISCV_E = false) then -- normal register file with 32 entries
-        if (rf_we = '1') then
+        if (ctrl_i(ctrl_rf_wb_en_c) = '1') then
           reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_contents <= rf_wdata(31 downto 0);
 	        reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag <= rf_wdata(35 downto 32);
         end if;
@@ -122,26 +130,13 @@ begin
         rs1_t <= reg_file(to_integer(unsigned(opa_addr(4 downto 0)))).reg_tag;
         rs2 <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_contents;
         rs2_t <= reg_file(to_integer(unsigned(opb_addr(4 downto 0)))).reg_tag;
-      -- else -- embedded register file with 16 entries
-      --  if (rf_we = '1') then
-      --    reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0)))) <= rf_wdata;
-      --  end if;
-      --  rs1 <= reg_file_emb(to_integer(unsigned(opa_addr(3 downto 0))));
-      --  rs2 <= reg_file_emb(to_integer(unsigned(opb_addr(3 downto 0))));
       end if;
     end if;
   end process rf_access;
 
-  -- check if we are writing to x0 --
-  rd_is_r0 <= not or_reduce_f(ctrl_i(ctrl_rf_rd_adr4_c downto ctrl_rf_rd_adr0_c)) when (CPU_EXTENSION_RISCV_E = false) else
-              not or_reduce_f(ctrl_i(ctrl_rf_rd_adr3_c downto ctrl_rf_rd_adr0_c));
-
-  -- valid RF write access? --
-  rf_we <= (ctrl_i(ctrl_rf_wb_en_c) and (not rd_is_r0)) or ctrl_i(ctrl_rf_r0_we_c);
-
   -- access addresses --
-  dst_addr <= ctrl_i(ctrl_rf_rd_adr4_c downto ctrl_rf_rd_adr0_c) when (ctrl_i(ctrl_rf_r0_we_c) = '0') else (others => '0'); -- force dst=r0?
-  opa_addr <= dst_addr when (rf_we = '1') else ctrl_i(ctrl_rf_rs1_adr4_c downto ctrl_rf_rs1_adr0_c); -- rd/rs1
+  dst_addr <= ctrl_i(ctrl_rf_rd_adr4_c downto ctrl_rf_rd_adr0_c);
+  opa_addr <= dst_addr when (ctrl_i(ctrl_rf_wb_en_c) = '1') else ctrl_i(ctrl_rf_rs1_adr4_c downto ctrl_rf_rs1_adr0_c); -- rd/rs1
   opb_addr <= ctrl_i(ctrl_rf_rs2_adr4_c downto ctrl_rf_rs2_adr0_c); -- rs2
 
   -- data output --
