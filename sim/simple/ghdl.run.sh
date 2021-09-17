@@ -29,7 +29,8 @@ echo "Using simulation runtime args: $GHDL_RUN_ARGS";
 runcmd="$GHDL -r --work=neorv32 --workdir=build neorv32_tb_simple \
   --max-stack-alloc=0 \
   --ieee-asserts=disable \
-  --assert-level=error $GHDL_RUN_ARGS"
+  --assert-level=error \
+  --wave=neorv32_wave.ghw  $GHDL_RUN_ARGS"
 
 if [ -n "$GHDL_DEVNULL" ]; then
   $runcmd >> /dev/null

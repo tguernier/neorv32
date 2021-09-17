@@ -48,14 +48,14 @@ use std.textio.all;
 
 entity neorv32_tb_simple is
   generic (
-    CPU_EXTENSION_RISCV_A        : boolean := true;
-    CPU_EXTENSION_RISCV_C        : boolean := true;
+    CPU_EXTENSION_RISCV_A        : boolean := false;
+    CPU_EXTENSION_RISCV_C        : boolean := false;
     CPU_EXTENSION_RISCV_E        : boolean := false;
-    CPU_EXTENSION_RISCV_M        : boolean := true;
+    CPU_EXTENSION_RISCV_M        : boolean := false;
     CPU_EXTENSION_RISCV_U        : boolean := true;
-    CPU_EXTENSION_RISCV_Zbb      : boolean := true;
+    CPU_EXTENSION_RISCV_Zbb      : boolean := false;
     CPU_EXTENSION_RISCV_Zicsr    : boolean := true;
-    CPU_EXTENSION_RISCV_Zifencei : boolean := true;
+    CPU_EXTENSION_RISCV_Zifencei : boolean := false;
     EXT_IMEM_C                   : boolean := false;   -- false: use and boot from proc-internal IMEM, true: use and boot from external (initialized) simulated IMEM (ext. mem A)
     MEM_INT_IMEM_SIZE            : natural := 16*1024  -- size in bytes of processor-internal IMEM / external mem A
   );
@@ -175,27 +175,16 @@ begin
     -- On-Chip Debugger (OCD) --
     ON_CHIP_DEBUGGER_EN          => false,          -- implement on-chip debugger
     -- RISC-V CPU Extensions --
-<<<<<<< HEAD:sim/neorv32_tb.simple.vhd
-    CPU_EXTENSION_RISCV_A        => false,          -- implement atomic extension?
-    CPU_EXTENSION_RISCV_C        => false,          -- implement compressed extension?
-    CPU_EXTENSION_RISCV_E        => false,         -- implement embedded RF extension?
-    CPU_EXTENSION_RISCV_M        => false,          -- implement muld/div extension?
-    CPU_EXTENSION_RISCV_U        => true,          -- implement user mode extension?
-    CPU_EXTENSION_RISCV_Zfinx    => false,          -- implement 32-bit floating-point extension (using INT reg!)
-    CPU_EXTENSION_RISCV_Zicsr    => true,          -- implement CSR system?
-    CPU_EXTENSION_RISCV_Zifencei => false,          -- implement instruction stream sync.?
-=======
     CPU_EXTENSION_RISCV_A        => CPU_EXTENSION_RISCV_A,  -- implement atomic extension?
     CPU_EXTENSION_RISCV_C        => CPU_EXTENSION_RISCV_C,  -- implement compressed extension?
     CPU_EXTENSION_RISCV_E        => CPU_EXTENSION_RISCV_E,  -- implement embedded RF extension?
     CPU_EXTENSION_RISCV_M        => CPU_EXTENSION_RISCV_M,  -- implement muld/div extension?
     CPU_EXTENSION_RISCV_U        => CPU_EXTENSION_RISCV_U,  -- implement user mode extension?
     CPU_EXTENSION_RISCV_Zbb      => CPU_EXTENSION_RISCV_Zbb,-- implement basic bit-manipulation sub-extension?
-    CPU_EXTENSION_RISCV_Zfinx    => true,          -- implement 32-bit floating-point extension (using INT reg!)
+    CPU_EXTENSION_RISCV_Zfinx    => false,          -- implement 32-bit floating-point extension (using INT reg!)
     CPU_EXTENSION_RISCV_Zicsr    => CPU_EXTENSION_RISCV_Zicsr,     -- implement CSR system?
     CPU_EXTENSION_RISCV_Zifencei => CPU_EXTENSION_RISCV_Zifencei,  -- implement instruction stream sync.?
     CPU_EXTENSION_RISCV_Zmmul    => false,         -- implement multiply-only M sub-extension?
->>>>>>> master:sim/simple/neorv32_tb.simple.vhd
     -- Extension Options --
     FAST_MUL_EN                  => false,         -- use DSPs for M extension's multiplier
     FAST_SHIFT_EN                => false,         -- use barrel shifter for shift operations
@@ -221,12 +210,12 @@ begin
     MEM_EXT_EN                   => false,          -- implement external memory bus interface?
     MEM_EXT_TIMEOUT              => 255,           -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Stream link interface --
-    SLINK_NUM_TX                 => 8,             -- number of TX links (0..8)
-    SLINK_NUM_RX                 => 8,             -- number of TX links (0..8)
+    SLINK_NUM_TX                 => 0,             -- number of TX links (0..8)
+    SLINK_NUM_RX                 => 0,             -- number of TX links (0..8)
     SLINK_TX_FIFO                => 4,             -- TX fifo depth, has to be a power of two
     SLINK_RX_FIFO                => 1,             -- RX fifo depth, has to be a power of two
     -- External Interrupts Controller (XIRQ) --
-    XIRQ_NUM_CH                  => 32,            -- number of external IRQ channels (0..32)
+    XIRQ_NUM_CH                  => 0,            -- number of external IRQ channels (0..32)
     XIRQ_TRIGGER_TYPE            => (others => '1'), -- trigger type: 0=level, 1=edge
     XIRQ_TRIGGER_POLARITY        => (others => '1'), -- trigger polarity: 0=low-level/falling-edge, 1=high-level/rising-edge
     -- Processor peripherals --
@@ -243,12 +232,7 @@ begin
     IO_CFS_CONFIG                => (others => '0'), -- custom CFS configuration generic
     IO_CFS_IN_SIZE               => 32,            -- size of CFS input conduit in bits
     IO_CFS_OUT_SIZE              => 32,            -- size of CFS output conduit in bits
-<<<<<<< HEAD:sim/neorv32_tb.simple.vhd
-    IO_NCO_EN                    => false,          -- implement numerically-controlled oscillator (NCO)?
     IO_NEOLED_EN                 => false           -- implement NeoPixel-compatible smart LED interface (NEOLED)?
-=======
-    IO_NEOLED_EN                 => true           -- implement NeoPixel-compatible smart LED interface (NEOLED)?
->>>>>>> master:sim/simple/neorv32_tb.simple.vhd
   )
   port map (
     -- Global control --
@@ -315,7 +299,7 @@ begin
     mtime_i        => (others => '0'), -- current system time from ext. MTIME (if IO_MTIME_EN = false)
     mtime_o        => open,            -- current system time from int. MTIME (if IO_MTIME_EN = true)
     -- External platform interrupts (available if XIRQ_NUM_CH > 0) --
-    xirq_i         => gpio(31 downto 0), -- IRQ channels
+    -- xirq_i         => gpio(31 downto 0), -- IRQ channels
     -- CPU Interrupts --
     nm_irq_i       => nmi_ring,        -- non-maskable interrupt
     mtime_irq_i    => '0',             -- machine software interrupt, available if IO_MTIME_EN = false
