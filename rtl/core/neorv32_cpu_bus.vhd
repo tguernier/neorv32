@@ -236,7 +236,7 @@ begin
   end process mem_do_reg;
 
   -- byte enable and output data alignment --
-  byte_enable: process(mar, mdo, ctrl_i)
+  byte_enable: process(mar, mdo, mdo_tag, ctrl_i)
   begin
     case ctrl_i(ctrl_bus_size_msb_c downto ctrl_bus_size_lsb_c) is -- data size
       when "00" => -- byte
@@ -284,7 +284,7 @@ begin
   end process mem_di_reg;
 
   -- input data alignment and sign extension --
-  read_align: process(mdi, mar, ctrl_i)
+  read_align: process(mdi, mdi_tag, mar, ctrl_i)
     variable byte_in_v    : std_ulogic_vector(07 downto 0); 
     variable byte_tag_v   : std_ulogic;
     variable hword_in_v   : std_ulogic_vector(15 downto 0);
@@ -314,11 +314,11 @@ begin
       when "00" => -- byte
         rdata_align(31 downto 08) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and byte_in_v(7))); -- sign extension
         rdata_align(07 downto 00) <= byte_in_v;
-        r_tag_align(0) <= byte_tag_v;
+        r_tag_align <= "000" & byte_tag_v;
       when "01" => -- half-word
         rdata_align(31 downto 16) <= (others => ((not ctrl_i(ctrl_bus_unsigned_c)) and hword_in_v(15))); -- sign extension
         rdata_align(15 downto 00) <= hword_in_v; -- high half-word
-        r_tag_align(1 downto 0) <= hword_tag_v; 
+        r_tag_align <= "00" & hword_tag_v; 
       when others => -- word
         rdata_align <= mdi; -- full word
         r_tag_align <= mdi_tag;

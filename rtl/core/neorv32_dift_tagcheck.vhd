@@ -24,9 +24,6 @@ end entity dift_tag_check;
 architecture dift_tag_check_rtl of dift_tag_check is
   -- result --
   signal tag_except   : std_ulogic;
-  signal rs1_reduced  : std_ulogic; -- or-reduced rs1 tag
-  signal rs2_reduced  : std_ulogic; -- or-reduced rs2_tag
-  signal alu_reduced  : std_ulogic; -- or-reduced alu tag
 begin
 -- dift_ctrl(3) == 1 -> check rs1_tag (bit 81)
 -- dift_ctrl(2) == 1 -> check rs2_tag (bit 80)
@@ -34,10 +31,11 @@ begin
 -- dift_ctrl(0) == 1 -> check pc_tag  (bit 78)
 
   dift_tag_check_core: process(ctrl_i, rs1_tag_i, rs2_tag_i, alu_tag_i, pc_tag_i)
+    variable rs1_reduced, rs2_reduced, alu_reduced : std_ulogic; -- or-reduced DIFT tags
   begin
-    rs1_reduced <= or_reduce_f(rs1_tag_i);
-    rs2_reduced <= or_reduce_f(rs2_tag_i);
-    alu_reduced <= or_reduce_f(alu_tag_i);
+    rs1_reduced := or_reduce_f(rs1_tag_i);
+    rs2_reduced := or_reduce_f(rs2_tag_i);
+    alu_reduced := or_reduce_f(alu_tag_i);
 
     case ctrl_i(ctrl_dift_chk_3_c downto ctrl_dift_chk_0_c) is
       when "0000" =>

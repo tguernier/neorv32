@@ -165,6 +165,7 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal rs2_t      : std_ulogic_vector(3 downto 0);
   signal rs2_tagged : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- rs2 (register output to bus) with tag
   signal tag_except : std_ulogic; -- DIFT tag exception (from tag check)
+  signal nm_irq     : std_ulogic; -- non-maskable interrupt
 
   -- pmp interface --
   signal pmp_addr : pmp_addr_if_t;
@@ -300,7 +301,7 @@ begin
     mext_irq_i    => mext_irq_i,  -- machine external interrupt
     mtime_irq_i   => mtime_irq_i, -- machine timer interrupt
     -- non-maskable interrupt --
-    nm_irq_i      => nm_irq_i,    -- nmi
+    nm_irq_i      => nm_irq,    -- nmi
     -- fast interrupts (custom) --
     firq_i        => firq_i,      -- fast interrupt trigger
     -- system time input from MTIME --
@@ -464,6 +465,9 @@ begin
     -- data output
     tag_except_o  => tag_except     -- DIFT tag exception
   );
+
+  -- tag interrupt
+  nm_irq <= nm_irq_i or tag_except;
 
   -- current privilege level --
   i_bus_priv_o <= ctrl(ctrl_priv_lvl_msb_c downto ctrl_priv_lvl_lsb_c);

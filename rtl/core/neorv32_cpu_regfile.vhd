@@ -99,7 +99,7 @@ begin
 
   -- Data Input Mux -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  input_mux: process(rd_is_r0, ctrl_i, alu_i, mem_i)
+  input_mux: process(rd_is_r0, ctrl_i, alu_i, alu_tag_i, mem_i)
   begin
     if (rd_is_r0 = '1') then -- write zero if accessing x0 to "emulate" it is hardwired to zero
       rf_wdata <= (others => '0');

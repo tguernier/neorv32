@@ -107,50 +107,66 @@ begin
 
   -- Memory Access --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  mem_access: process(clk_i)
+  data_mem_access: process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      -- this RAM style should not require "no_rw_check" attributes as the read-after-write behavior
+      -- is intended to be defined implicitly via the if-WRITE-else-READ construct
+      if (acc_en = '1') and (settag_i = '0') then -- reduce switching activity when not accessed
+        if (wren_i = '1') and (ben_i(0) = '1') then -- byte 0
+          mem_ram_b0(to_integer(unsigned(addr))) <= data_i(07 downto 00);
+        else
+          mem_ram_b0_rd <= mem_ram_b0(to_integer(unsigned(addr)));
+        end if;
+        if (wren_i = '1') and (ben_i(1) = '1') then -- byte 1
+          mem_ram_b1(to_integer(unsigned(addr))) <= data_i(15 downto 08);
+        else
+          mem_ram_b1_rd <= mem_ram_b1(to_integer(unsigned(addr)));
+        end if;
+        if (wren_i = '1') and (ben_i(2) = '1') then -- byte 2
+          mem_ram_b2(to_integer(unsigned(addr))) <= data_i(23 downto 16);
+        else
+          mem_ram_b2_rd <= mem_ram_b2(to_integer(unsigned(addr)));
+        end if;
+        if (wren_i = '1') and (ben_i(3) = '1') then -- byte 3
+          mem_ram_b3(to_integer(unsigned(addr))) <= data_i(31 downto 24);
+        else
+          mem_ram_b3_rd <= mem_ram_b3(to_integer(unsigned(addr)));
+        end if;
+      end if;
+    end if;
+  end process data_mem_access;
+
+  tag_mem_access: process(clk_i)
   begin
     if rising_edge(clk_i) then
       -- this RAM style should not require "no_rw_check" attributes as the read-after-write behavior
       -- is intended to be defined implicitly via the if-WRITE-else-READ construct
       if (acc_en = '1') then -- reduce switching activity when not accessed
-        if (wren_i = '1') and (settag_i = '1') then
-          mem_tag_b0(to_integer(unsigned(addr))) <= '1';
-          mem_tag_b1(to_integer(unsigned(addr))) <= '1';
-          mem_tag_b2(to_integer(unsigned(addr))) <= '1';
-          mem_tag_b3(to_integer(unsigned(addr))) <= '1';
+        if (wren_i = '1') and (ben_i(0) = '1') then -- byte 0
+          mem_tag_b0(to_integer(unsigned(addr))) <= data_i(32) or settag_i;
         else
-          if (wren_i = '1') and (ben_i(0) = '1') then -- byte 0
-            mem_ram_b0(to_integer(unsigned(addr))) <= data_i(07 downto 00);
-            mem_tag_b0(to_integer(unsigned(addr))) <= data_i(32);
-          else
-            mem_ram_b0_rd <= mem_ram_b0(to_integer(unsigned(addr)));
-            mem_tag_b0_rd <= mem_tag_b0(to_integer(unsigned(addr)));
-          end if;
-          if (wren_i = '1') and (ben_i(1) = '1') then -- byte 1
-            mem_ram_b1(to_integer(unsigned(addr))) <= data_i(15 downto 08);
-            mem_tag_b1(to_integer(unsigned(addr))) <= data_i(33);
-          else
-            mem_ram_b1_rd <= mem_ram_b1(to_integer(unsigned(addr)));
-            mem_tag_b1_rd <= mem_tag_b1(to_integer(unsigned(addr)));
-          end if;
-          if (wren_i = '1') and (ben_i(2) = '1') then -- byte 2
-            mem_ram_b2(to_integer(unsigned(addr))) <= data_i(23 downto 16);
-            mem_tag_b2(to_integer(unsigned(addr))) <= data_i(34);
-          else
-            mem_ram_b2_rd <= mem_ram_b2(to_integer(unsigned(addr)));
-            mem_tag_b2_rd <= mem_tag_b2(to_integer(unsigned(addr)));
-          end if;
-          if (wren_i = '1') and (ben_i(3) = '1') then -- byte 3
-            mem_ram_b3(to_integer(unsigned(addr))) <= data_i(31 downto 24);
-            mem_tag_b3(to_integer(unsigned(addr))) <= data_i(35);
-          else
-            mem_ram_b3_rd <= mem_ram_b3(to_integer(unsigned(addr)));
-            mem_tag_b3_rd <= mem_tag_b3(to_integer(unsigned(addr)));
-          end if;
+          mem_tag_b0_rd <= mem_tag_b0(to_integer(unsigned(addr)));
+        end if;
+        if (wren_i = '1') and (ben_i(1) = '1') then -- byte 1
+          mem_tag_b1(to_integer(unsigned(addr))) <= data_i(33) or settag_i;
+        else
+          mem_tag_b1_rd <= mem_tag_b1(to_integer(unsigned(addr)));
+        end if;
+        if (wren_i = '1') and (ben_i(2) = '1') then -- byte 2
+          mem_tag_b2(to_integer(unsigned(addr))) <= data_i(34) or settag_i;
+        else
+          mem_tag_b2_rd <= mem_tag_b2(to_integer(unsigned(addr)));
+        end if;
+        if (wren_i = '1') and (ben_i(3) = '1') then -- byte 3
+          mem_tag_b3(to_integer(unsigned(addr))) <= data_i(35) or settag_i;
+        else
+          mem_tag_b3_rd <= mem_tag_b3(to_integer(unsigned(addr)));
         end if;
       end if;
     end if;
-  end process mem_access;
+
+  end process tag_mem_access;
 
 
   -- Bus Feedback ---------------------------------------------------------------------------

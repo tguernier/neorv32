@@ -90,10 +90,10 @@ begin
       -- write access --
       if ((acc_en and wren_i) = '1') then
         if (addr = gpio_out_lo_addr_c) then
-          dout_lo <= data_i;
+          dout_lo <= data_i(31 downto 0);
         end if;
         if (addr = gpio_out_hi_addr_c) then
-          dout_hi <= data_i;
+          dout_hi <= data_i(31 downto 0);
         end if;
       end if;
 
