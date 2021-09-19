@@ -256,6 +256,11 @@ begin
           when "10"   => d_bus_ben <= "0100";
           when others => d_bus_ben <= "1000";
         end case;
+      when "01" => -- half-word
+        d_bus_wdata(15 downto 0) <= mdo(15 downto 00);
+        d_bus_wdata(31 downto 16) <= mdo(15 downto 00);
+        d_bus_wdata(33 downto 32) <= mdo_tag(1 downto 0);
+        d_bus_wdata(35 downto 34) <= mdo_tag(1 downto 0);
         if (mar(1) = '0') then
           d_bus_ben <= "0011"; -- low half-word
         else
