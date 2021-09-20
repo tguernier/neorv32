@@ -696,8 +696,6 @@ begin
   execute_engine_fsm_sync: process(rstn_i, clk_i)
     variable alu_add_tag_reduced : std_ulogic;
   begin
-    alu_add_tag_reduced := or_reduce_f(alu_tag_i); -- or-reduce tag input to 1 bit
-
     if (rstn_i = '0') then
       -- registers that DO require a specific reset state --
       execute_engine.pc       <= CPU_BOOT_ADDR(data_width_c-1 downto 1) & '0';
@@ -719,6 +717,7 @@ begin
       ctrl(ctrl_bus_wr_c)       <= '0';
       ctrl(ctrl_bus_settag_c)   <= '0';
     elsif rising_edge(clk_i) then
+		  alu_add_tag_reduced := or_reduce_f(alu_tag_i); -- or-reduce tag input to 1 bit
       -- PC update --
       if (execute_engine.pc_we = '1') then
         if (execute_engine.pc_mux_sel = '0') then
