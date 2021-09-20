@@ -1200,11 +1200,13 @@ package neorv32_package is
       instr_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- instruction
       cmp_i         : in  std_ulogic_vector(1 downto 0); -- comparator status
       alu_add_i     : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU address result
+      alu_tag_i     : in  std_ulogic_vector(3 downto 0); -- ALU address tag 
       rs1_i         : in  std_ulogic_vector(data_width_c-1 downto 0); -- rf source 1
       -- data output --
       imm_o         : out std_ulogic_vector(data_width_c-1 downto 0); -- immediate
       fetch_pc_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- PC for instruction fetch
       curr_pc_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- current PC (corresponding to current instruction)
+      curr_pc_tag_o : out std_ulogic; -- PC tag
       csr_rdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
       -- FPU interface --
       fpu_flags_i   : in  std_ulogic_vector(04 downto 0); -- exception flags

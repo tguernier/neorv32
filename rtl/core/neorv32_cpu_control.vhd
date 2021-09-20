@@ -87,11 +87,13 @@ entity neorv32_cpu_control is
     instr_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- instruction
     cmp_i         : in  std_ulogic_vector(1 downto 0); -- comparator status
     alu_add_i     : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU address result
+    alu_tag_i     : in  std_ulogic_vector(3 downto 0); -- ALU address tag
     rs1_i         : in  std_ulogic_vector(data_width_c-1 downto 0); -- rf source 1
     -- data output --
     imm_o         : out std_ulogic_vector(data_width_c-1 downto 0); -- immediate
     fetch_pc_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- PC for instruction fetch
     curr_pc_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- current PC (corresponding to current instruction)
+    curr_pc_tag_o : out std_ulogic; -- PC tag
     csr_rdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
     -- FPU interface --
     fpu_flags_i   : in  std_ulogic_vector(04 downto 0); -- exception flags
@@ -215,9 +217,11 @@ architecture neorv32_cpu_control_rtl of neorv32_cpu_control is
     --
     branch_taken : std_ulogic; -- branch condition fulfilled
     pc           : std_ulogic_vector(data_width_c-1 downto 0); -- actual PC, corresponding to current executed instruction
+    pc_tag       : std_ulogic; -- PC has only 1 tag bit
     pc_mux_sel   : std_ulogic; -- source select for PC update
     pc_we        : std_ulogic; -- PC update enabled
     next_pc      : std_ulogic_vector(data_width_c-1 downto 0); -- next PC, corresponding to next instruction to be executed
+    next_pc_tag  : std_ulogic;
     next_pc_inc  : std_ulogic_vector(data_width_c-1 downto 0); -- increment to get next PC
     last_pc      : std_ulogic_vector(data_width_c-1 downto 0); -- PC of last executed instruction
     --
@@ -690,21 +694,26 @@ begin
   -- Execute Engine FSM Sync ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   execute_engine_fsm_sync: process(rstn_i, clk_i)
+    variable alu_add_tag_reduced : std_ulogic;
   begin
+    alu_add_tag_reduced := or_reduce_f(alu_tag_i); -- or-reduce tag input to 1 bit
+
     if (rstn_i = '0') then
       -- registers that DO require a specific reset state --
       execute_engine.pc       <= CPU_BOOT_ADDR(data_width_c-1 downto 1) & '0';
+      execute_engine.pc_tag   <= '0';
       execute_engine.state    <= SYS_WAIT;
       execute_engine.sleep    <= '0';
       execute_engine.branched <= '1'; -- reset is a branch from "somewhere"
       -- no dedicated RESET required --
-      execute_engine.state_prev <= SYS_WAIT; -- actual reset value is not relevant
-      execute_engine.i_reg      <= (others => def_rst_val_c);
-      execute_engine.is_ci      <= def_rst_val_c;
-      execute_engine.last_pc    <= (others => def_rst_val_c);
-      execute_engine.i_reg_last <= (others => def_rst_val_c);
-      execute_engine.next_pc    <= (others => def_rst_val_c);
-      ctrl                      <= (others => def_rst_val_c);
+      execute_engine.state_prev   <= SYS_WAIT; -- actual reset value is not relevant
+      execute_engine.i_reg        <= (others => def_rst_val_c);
+      execute_engine.is_ci        <= def_rst_val_c;
+      execute_engine.last_pc      <= (others => def_rst_val_c);
+      execute_engine.i_reg_last   <= (others => def_rst_val_c);
+      execute_engine.next_pc      <= (others => def_rst_val_c);
+      execute_engine.next_pc_tag  <= '0';
+      ctrl                        <= (others => def_rst_val_c);
       --
       ctrl(ctrl_bus_rd_c)       <= '0';
       ctrl(ctrl_bus_wr_c)       <= '0';
@@ -714,8 +723,10 @@ begin
       if (execute_engine.pc_we = '1') then
         if (execute_engine.pc_mux_sel = '0') then
           execute_engine.pc <= execute_engine.next_pc(data_width_c-1 downto 1) & '0'; -- normal (linear) increment OR trap enter/exit
+          execute_engine.pc_tag <= execute_engine.next_pc_tag;
         else
           execute_engine.pc <= alu_add_i(data_width_c-1 downto 1) & '0'; -- jump/taken_branch
+          execute_engine.pc_tag <= alu_add_tag_reduced;
         end if;
       end if;
       --
@@ -736,6 +747,7 @@ begin
       -- next PC --
       case execute_engine.state is
         when TRAP_ENTER =>
+          execute_engine.next_pc_tag <= '0';
           if (CPU_EXTENSION_RISCV_DEBUG = false) then -- normal trapping
             execute_engine.next_pc <= csr.mtvec(data_width_c-1 downto 1) & '0'; -- trap enter
           else -- DEBUG MODE enabled
@@ -748,12 +760,14 @@ begin
             end if;
           end if;
         when TRAP_EXIT =>
+          execute_engine.next_pc_tag <= '0';
           if (CPU_EXTENSION_RISCV_DEBUG = false) or (debug_ctrl.running = '0') then -- normal end of trap
             execute_engine.next_pc <= csr.mepc(data_width_c-1 downto 1) & '0'; -- trap exit
           else -- DEBUG MODE exiting
             execute_engine.next_pc <= csr.dpc(data_width_c-1 downto 1) & '0'; -- debug mode exit
           end if;
         when EXECUTE =>
+          execute_engine.next_pc_tag <= execute_engine.pc_tag;
           execute_engine.next_pc <= std_ulogic_vector(unsigned(execute_engine.pc) + unsigned(execute_engine.next_pc_inc)); -- next linear PC
         when others =>
           NULL;
@@ -770,6 +784,7 @@ begin
 
   -- PC output --
   curr_pc_o <= execute_engine.pc(data_width_c-1 downto 1) & '0'; -- PC for ALU ops
+  curr_pc_tag_o <= execute_engine.pc_tag;
 
   -- CSR access address --
   csr.addr <= execute_engine.i_reg(instr_csr_id_msb_c downto instr_csr_id_lsb_c);
@@ -957,7 +972,7 @@ begin
     else
       ctrl_nxt(ctrl_bus_ch_lock_c) <= '0';
     end if;
-    ctrl_nxt(ctrl_dift_chk_3_c) <= '1'; -- TODO: add PC tag
+    ctrl_nxt(ctrl_dift_chk_3_c) <= csr.dift_tag_chk(dift_chk_pc_c); -- set PC tag bit
 
 
     -- state machine --

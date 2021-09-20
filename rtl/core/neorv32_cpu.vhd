@@ -164,6 +164,7 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal rs1_t      : std_ulogic_vector(3 downto 0); -- source register tag bits
   signal rs2_t      : std_ulogic_vector(3 downto 0);
   signal rs2_tagged : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- rs2 (register output to bus) with tag
+  signal pc_tag     : std_ulogic;
   signal tag_except : std_ulogic; -- DIFT tag exception (from tag check)
   signal nm_irq     : std_ulogic; -- non-maskable interrupt
 
@@ -286,11 +287,13 @@ begin
     instr_i       => instr,       -- instruction
     cmp_i         => comparator,  -- comparator status
     alu_add_i     => alu_add,     -- ALU address result
+    alu_tag_i     => tag_res,     -- ALU tag result
     rs1_i         => rs1,         -- rf source 1
     -- data output --
     imm_o         => imm,         -- immediate
     fetch_pc_o    => fetch_pc,    -- PC for instruction fetch
     curr_pc_o     => curr_pc,     -- current PC (corresponding to current instruction)
+    curr_pc_tag_o => pc_tag,      -- current PC tag
     csr_rdata_o   => csr_rdata,   -- CSR read data
     -- FPU interface --
     fpu_flags_i   => fpu_flags,   -- exception flags
@@ -461,7 +464,7 @@ begin
     rs1_tag_i     => rs1_t,         -- rf source 1 tag
     rs2_tag_i     => rs2_t,         -- rf source 2 tag
     alu_tag_i     => tag_res,       -- alu result tag
-    pc_tag_i      => '0',           -- TODO: add PC dift tag
+    pc_tag_i      => pc_tag,        -- PC tag
     -- data output
     tag_except_o  => tag_except     -- DIFT tag exception
   );

@@ -2,9 +2,10 @@
 #include <string.h>
 
 #define BAUD_RATE 19200
+#define SIZE 50
 
-char stringa[50] = "short string";
-char stringb[50] = "a long string that will get truncated";
+char stringa[SIZE] = "short string";
+char stringb[SIZE] = "a long string that will get truncated";
 char *string[2] = {stringa, stringb};
 
 volatile int a, b;
@@ -26,21 +27,39 @@ void receive_input(char *buffer) {
 void init() {
 	void (**q)(char*) = (void*) string[1] + 20;
 	*q = bad_function;
-} 	
+}
+
+void array_settag(char *array_ptr, int size) {
+  for (int i = 0; i < size; i++) {
+    asm volatile
+    (
+      "settag x0, 0(%[offset]);"
+      :
+      :[offset] "r" (array_ptr)
+    );
+    array_ptr++;
+  }
+}
 
 int main(void) {
-  // neorv32 setup
-	// neorv32_rte_setup(); // capture exceptions/debug info
-  // neorv32_uart_setup(BAUD_RATE, PARITY_NONE, FLOW_CONTROL_NONE); // uart init
+  // init DIFT system
+  neorv32_cpu_csr_write(CSR_DIFTPROP, 0x00000222); // set tag propagation register
+  neorv32_cpu_csr_write(CSR_DIFTCHK, 0x00008000); // set tag check register
+  neorv32_cpu_eint(); // enable interrupts
   
-  // neorv32_uart_print("starting buffer overflow test\n");
+  // init string
   init();
+
+  // tag strings (simulated input)
+  array_settag(stringa, SIZE);
+  array_settag(stringb, SIZE);
+  
 	char buffer[28];
 	void (**next_function)(char*) = (void*) buffer + 20;
 	*next_function = good_function;
 
 	receive_input(buffer);
-	(*next_function)(buffer);
+	(*next_function)(buffer); // calls good_function()
 	receive_input(buffer);
-	(*next_function)(buffer);
+	(*next_function)(buffer); // would call bad_function() on unmodified system, shouldn't execute on DIFT system
 }
