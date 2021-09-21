@@ -10,11 +10,35 @@ char *string[2] = {stringa, stringb};
 
 volatile int a, b;
 
+// prototypes
+void dift_exception_handler(void);
+void print_hex_word(uint32_t num);
+void good_function(char* buffer);
+void bad_function(char* buffer);
+void recieve_input(char* buffer);
+void init();
+void array_settag(char* array_ptr, int size);
+
 void dift_exception_handler(void) {
   // this function will be run when the DIFT system detects tagged data being used in an unsafe way 
   // (e.g. used to change the program counter)
-  neorv32_uart_printf("DIFT exception!");
+  uint32_t epc = neorv32_cpu_csr_read(CSR_MEPC);
+  neorv32_uart_printf("DIFT tag check exception at: ");
+  print_hex_word(epc);
+  neorv32_uart_printf("\n");
   neorv32_cpu_sleep(); // stall CPU
+}
+
+void print_hex_word(uint32_t num) {
+  // function written by S. T. Nolting
+  static const char hex_symbols[16] = "0123456789abcdef";
+  neorv32_uart_printf("0x");
+
+  int i;
+  for (i=0; i<8; i++) {
+    uint32_t index = (num >> (28 - 4*i)) & 0xF;
+    neorv32_uart_putc(hex_symbols[index]);
+  }
 }
 
 void good_function(char *buffer) {
