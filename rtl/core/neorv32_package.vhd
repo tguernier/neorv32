@@ -84,7 +84,7 @@ package neorv32_package is
   -- -------------------------------------------------------------------------------------------
   type mem32_t is array (natural range <>) of std_ulogic_vector(31 downto 0); -- memory with 32-bit entries
   type mem8_t  is array (natural range <>) of std_ulogic_vector(07 downto 0); -- memory with 8-bit entries
-  type mem1_t  is array (natural range <>) of std_ulogic;                     -- 1-bit memory (for DIFT tags)
+  type mem4_t  is array (natural range <>) of std_ulogic_vector(03 downto 0); -- 4-bit memory (for DIFT tags)
 
   -- Helper Functions -----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------

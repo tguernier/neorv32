@@ -68,6 +68,7 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   signal acc_en     : std_ulogic;
   signal rdata      : std_ulogic_vector(31 downto 0);
   signal dift_rdata : std_ulogic_vector(03 downto 0);
+  signal dift_wdata : std_ulogic_vector(03 downto 0);
   signal rden       : std_ulogic;
   signal addr       : std_ulogic_vector(index_size_f(DMEM_SIZE/4)-1 downto 0);
 
@@ -82,15 +83,11 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   signal mem_ram_b2 : mem8_t(0 to DMEM_SIZE/4-1);
   signal mem_ram_b3 : mem8_t(0 to DMEM_SIZE/4-1);
   
-  -- DIFT tag memory (1 tag bit per byte) - initialized with zeroes --
-  signal mem_tag_b0 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
-  signal mem_tag_b1 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
-  signal mem_tag_b2 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
-  signal mem_tag_b3 : mem1_t(0 to DMEM_SIZE/4-1) := (others => '0');
+  -- DIFT tag memory (4 tag bits per word) - initialized with zeroes --
+  signal mem_tag : mem4_t(0 to DMEM_SIZE/4-1) := (others => (others => '0'));
 
   -- read data --
   signal mem_ram_b0_rd, mem_ram_b1_rd, mem_ram_b2_rd, mem_ram_b3_rd : std_ulogic_vector(7 downto 0);
-  signal mem_tag_b0_rd, mem_tag_b1_rd, mem_tag_b2_rd, mem_tag_b3_rd : std_ulogic;
 
 begin
 
@@ -137,35 +134,21 @@ begin
     end if;
   end process data_mem_access;
 
+  dift_wdata <= "1111" when (settag_i = '1') else data_i(35 downto 32); -- settag instruction
+
   tag_mem_access: process(clk_i)
   begin
     if rising_edge(clk_i) then
       -- this RAM style should not require "no_rw_check" attributes as the read-after-write behavior
       -- is intended to be defined implicitly via the if-WRITE-else-READ construct
       if (acc_en = '1') then -- reduce switching activity when not accessed
-        if (wren_i = '1') and (ben_i(0) = '1') then -- byte 0
-          mem_tag_b0(to_integer(unsigned(addr))) <= data_i(32) or settag_i;
+        if (wren_i = '1') then
+          mem_tag(to_integer(unsigned(addr))) <= dift_wdata;
         else
-          mem_tag_b0_rd <= mem_tag_b0(to_integer(unsigned(addr)));
-        end if;
-        if (wren_i = '1') and (ben_i(1) = '1') then -- byte 1
-          mem_tag_b1(to_integer(unsigned(addr))) <= data_i(33) or settag_i;
-        else
-          mem_tag_b1_rd <= mem_tag_b1(to_integer(unsigned(addr)));
-        end if;
-        if (wren_i = '1') and (ben_i(2) = '1') then -- byte 2
-          mem_tag_b2(to_integer(unsigned(addr))) <= data_i(34) or settag_i;
-        else
-          mem_tag_b2_rd <= mem_tag_b2(to_integer(unsigned(addr)));
-        end if;
-        if (wren_i = '1') and (ben_i(3) = '1') then -- byte 3
-          mem_tag_b3(to_integer(unsigned(addr))) <= data_i(35) or settag_i;
-        else
-          mem_tag_b3_rd <= mem_tag_b3(to_integer(unsigned(addr)));
+          dift_rdata <= mem_tag(to_integer(unsigned(addr)));
         end if;
       end if;
     end if;
-
   end process tag_mem_access;
 
 
@@ -181,7 +164,6 @@ begin
 
   -- pack --
   rdata <= mem_ram_b3_rd & mem_ram_b2_rd & mem_ram_b1_rd & mem_ram_b0_rd;
-  dift_rdata <= mem_tag_b3_rd & mem_tag_b2_rd & mem_tag_b1_rd & mem_tag_b0_rd;
 
   -- output gate --
   data_o <= (dift_rdata & rdata) when (rden = '1') else (others => '0');
