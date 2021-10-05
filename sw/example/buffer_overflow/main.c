@@ -1,3 +1,7 @@
+// A demonstration program for a buffer overflow attack.
+// On an unmodified system bad_function would be called, but with DIFT the attack is caught
+// Has to be compiled with EFFORT -O0
+
 #include <neorv32.h>
 #include <string.h>
 
@@ -7,8 +11,6 @@
 char stringa[SIZE] = "short string";
 char stringb[SIZE] = "a long string that will get truncated";
 char *string[2] = {stringa, stringb};
-
-volatile int a, b;
 
 // prototypes
 void dift_exception_handler(void);
