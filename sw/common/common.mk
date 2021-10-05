@@ -10,7 +10,7 @@ APP_INC ?= -I .
 ASM_INC ?= -I .
 
 # Optimization
-EFFORT ?= -O0
+EFFORT ?= -Os
 
 # Compiler toolchain
 RISCV_PREFIX ?= riscv32-unknown-elf-

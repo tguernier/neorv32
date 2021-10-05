@@ -63,7 +63,7 @@ entity neorv32_top is
     CPU_EXTENSION_RISCV_C        : boolean := false;  -- implement compressed extension?
     CPU_EXTENSION_RISCV_E        : boolean := false;  -- implement embedded RF extension?
     CPU_EXTENSION_RISCV_M        : boolean := false;  -- implement mul/div extension?
-    CPU_EXTENSION_RISCV_U        : boolean := false;  -- implement user mode extension?
+    CPU_EXTENSION_RISCV_U        : boolean := true;  -- implement user mode extension?
     CPU_EXTENSION_RISCV_Zbb      : boolean := false;  -- implement basic bit-manipulation sub-extension?
     CPU_EXTENSION_RISCV_Zfinx    : boolean := false;  -- implement 32-bit floating-point extension (using INT regs!)
     CPU_EXTENSION_RISCV_Zicsr    : boolean := true;   -- implement CSR system?
@@ -81,7 +81,7 @@ entity neorv32_top is
     PMP_MIN_GRANULARITY          : natural := 64*1024; -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
 
     -- Hardware Performance Monitors (HPM) --
-    HPM_NUM_CNTS                 : natural := 0;      -- number of implemented HPM counters (0..29)
+    HPM_NUM_CNTS                 : natural := 4;      -- number of implemented HPM counters (0..29)
     HPM_CNT_WIDTH                : natural := 40;     -- total size of HPM counters (0..64)
 
     -- Internal Instruction memory (IMEM) --
