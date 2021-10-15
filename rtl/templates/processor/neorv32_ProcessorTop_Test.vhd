@@ -1,7 +1,5 @@
--- #################################################################################################
--- # << NEORV32 - General Purpose Parallel Input/Output Port (GPIO) >>                             #
--- # ********************************************************************************************* #
--- # 64-bit general purpose parallel input & output port unit.                                     #
+ -- #################################################################################################
+-- # << NEORV32 - Test Setup using the UART-Bootloader to upload and run executables >>            #
 -- # ********************************************************************************************* #
 -- # BSD 3-Clause License                                                                          #
 -- #                                                                                               #
@@ -31,7 +29,7 @@
 -- # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED  #
 -- # OF THE POSSIBILITY OF SUCH DAMAGE.                                                            #
 -- # ********************************************************************************************* #
--- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
+-- # The NEORV32 RISC-V Processor - https://github.com/stnolting/neorv32                           #
 -- #################################################################################################
 
 library ieee;
@@ -41,83 +39,66 @@ use ieee.numeric_std.all;
 library neorv32;
 use neorv32.neorv32_package.all;
 
-entity neorv32_gpio is
-  port (
-    -- host access --
-    clk_i  : in  std_ulogic; -- global clock line
-    addr_i : in  std_ulogic_vector(31 downto 0); -- address
-    rden_i : in  std_ulogic; -- read enable
-    wren_i : in  std_ulogic; -- write enable
-    data_i : in  std_ulogic_vector(35 downto 0); -- data in
-    data_o : out std_ulogic_vector(35 downto 0); -- data out
-    ack_o  : out std_ulogic; -- transfer acknowledge
-    -- parallel io --
-    gpio_o : out std_ulogic_vector(63 downto 0);
-    gpio_i : in  std_ulogic_vector(63 downto 0)
+entity neorv32_ProcessorTop_Test is
+  generic (
+    -- adapt these for your setup --
+    CLOCK_FREQUENCY   : natural := 50000000; -- clock frequency of clk_i in Hz
+    MEM_INT_IMEM_SIZE : natural := 32*1024;   -- size of processor-internal instruction memory in bytes
+    MEM_INT_DMEM_SIZE : natural := 16*1024     -- size of processor-internal data memory in bytes
   );
-end neorv32_gpio;
+  port (
+    -- Global control --
+    CLOCK_50    : in  std_ulogic; -- global clock, rising edge
+    KEY	       : in  std_ulogic_vector(3 downto 0); -- global reset, low-active, async
+    -- GPIO --
+    LEDR        : out std_ulogic_vector(9 downto 0); -- parallel output
+    -- UART0 --
+    HPS_UART_TX : out std_ulogic; -- UART0 send data
+    HPS_UART_RX : in  std_ulogic  -- UART0 receive data
+  );
+end entity;
 
-architecture neorv32_gpio_rtl of neorv32_gpio is
+architecture neorv32_test_setup_bootloader_rtl of neorv32_ProcessorTop_Test is
 
-  -- IO space: module base address --
-  constant hi_abb_c : natural := index_size_f(io_size_c)-1; -- high address boundary bit
-  constant lo_abb_c : natural := index_size_f(gpio_size_c); -- low address boundary bit
-
-  -- access control --
-  signal acc_en : std_ulogic; -- module access enable
-  signal addr   : std_ulogic_vector(31 downto 0); -- access address
-
-  -- accessible regs --
-  signal din_lo,  din_hi  : std_ulogic_vector(31 downto 0); -- r/-
-  signal dout_lo, dout_hi : std_ulogic_vector(31 downto 0); -- r/w
+  signal con_gpio_o : std_ulogic_vector(63 downto 0);
 
 begin
 
-  -- Access Control -------------------------------------------------------------------------
+  -- The Core Of The Problem ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  acc_en <= '1' when (addr_i(hi_abb_c downto lo_abb_c) = gpio_base_c(hi_abb_c downto lo_abb_c)) else '0';
-  addr   <= gpio_base_c(31 downto lo_abb_c) & addr_i(lo_abb_c-1 downto 2) & "00"; -- word aligned
+  neorv32_top_inst: neorv32_top
+  generic map (
+    -- General --
+    CLOCK_FREQUENCY              => CLOCK_FREQUENCY,   -- clock frequency of clk_i in Hz
+    INT_BOOTLOADER_EN            => true,              -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
+    -- RISC-V CPU Extensions --
+    CPU_EXTENSION_RISCV_C        => false,             -- implement compressed extension?
+    CPU_EXTENSION_RISCV_M        => false,             -- implement mul/div extension?
+    CPU_EXTENSION_RISCV_Zicsr    => true,              -- implement CSR system?
+    -- Internal Instruction memory --
+    MEM_INT_IMEM_EN              => true,              -- implement processor-internal instruction memory
+    MEM_INT_IMEM_SIZE            => MEM_INT_IMEM_SIZE, -- size of processor-internal instruction memory in bytes
+    -- Internal Data memory --
+    MEM_INT_DMEM_EN              => true,              -- implement processor-internal data memory
+    MEM_INT_DMEM_SIZE            => MEM_INT_DMEM_SIZE, -- size of processor-internal data memory in bytes
+    -- Processor peripherals --
+    IO_GPIO_EN                   => true,              -- implement general purpose input/output port unit (GPIO)?
+    IO_MTIME_EN                  => true,              -- implement machine system timer (MTIME)?
+    IO_UART0_EN                  => true               -- implement primary universal asynchronous receiver/transmitter (UART0)?
+  )
+  port map (
+    -- Global control --
+    clk_i       => CLOCK_50,    -- global clock, rising edge
+    rstn_i      => KEY(0),       -- global reset, low-active, async
+    -- GPIO (available if IO_GPIO_EN = true) --
+    gpio_o      => con_gpio_o,  -- parallel output
+    -- primary UART0 (available if IO_UART0_EN = true) --
+    uart0_txd_o => HPS_UART_TX, -- UART0 send data
+    uart0_rxd_i => HPS_UART_RX  -- UART0 receive data
+  );
+
+  -- GPIO output --
+  LEDR <= con_gpio_o(9 downto 0);
 
 
-  -- Read/Write Access ----------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  rw_access: process(clk_i)
-  begin
-    if rising_edge(clk_i) then
-      -- bus handshake --
-      ack_o <= acc_en and (rden_i or wren_i);
-
-      -- write access --
-      if ((acc_en and wren_i) = '1') then
-        if (addr = gpio_out_lo_addr_c) then
-          dout_lo <= data_i(31 downto 0);
-        end if;
-        if (addr = gpio_out_hi_addr_c) then
-          dout_hi <= data_i(31 downto 0);
-        end if;
-      end if;
-
-      -- input buffer --
-      din_lo <= gpio_i(31 downto 00);
-      din_hi <= gpio_i(63 downto 32);
-
-      -- read access --
-      data_o <= (others => '0');
-      if ((acc_en and rden_i) = '1') then
-        case addr is
-          when gpio_in_lo_addr_c  => data_o <= "0000" & din_lo;
-          when gpio_in_hi_addr_c  => data_o <= "0000" & din_hi;
-          when gpio_out_lo_addr_c => data_o <= "0000" & dout_lo;
-          when gpio_out_hi_addr_c => data_o <= "0000" & dout_hi;
-          when others             => data_o <= (others => '0');
-        end case;
-      end if;
-
-    end if;
-  end process rw_access;
-
-  -- output --
-  gpio_o <= dout_hi & dout_lo;
-
-
-end neorv32_gpio_rtl;
+end architecture;

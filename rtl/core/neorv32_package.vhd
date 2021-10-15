@@ -63,9 +63,11 @@ package neorv32_package is
 
   -- Architecture Constants (do not modify!) ------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  constant data_width_c : natural := 32; -- native data path width - do not change!
-  constant hw_version_c : std_ulogic_vector(31 downto 0) := x"01060001"; -- no touchy!
-  constant archid_c     : natural := 19; -- official NEORV32 architecture ID - hands off!
+  constant data_width_c   : natural := 32; -- native data path width - do not change!
+  constant dift_bus_w_c   : natural := 36; -- width for data + dift tags
+  constant hw_version_c   : std_ulogic_vector(31 downto 0) := x"01050700"; -- no touchy!
+  constant archid_c       : natural := 19; -- official NEORV32 architecture ID - hands off!
+  constant rf_r0_is_reg_c : boolean := true; -- x0 is a *physical register* that has to be initialized to zero by the CPU
 
   -- External Interface Types ---------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -82,6 +84,7 @@ package neorv32_package is
   -- -------------------------------------------------------------------------------------------
   type mem32_t is array (natural range <>) of std_ulogic_vector(31 downto 0); -- memory with 32-bit entries
   type mem8_t  is array (natural range <>) of std_ulogic_vector(07 downto 0); -- memory with 8-bit entries
+  type mem4_t  is array (natural range <>) of std_ulogic_vector(03 downto 0); -- 4-bit memory (for DIFT tags)
 
   -- Helper Functions -----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -366,8 +369,17 @@ package neorv32_package is
   constant ctrl_sleep_c         : natural := 72; -- set when CPU is in sleep mode
   constant ctrl_trap_c          : natural := 73; -- set when CPU is entering trap execution
   constant ctrl_debug_running_c : natural := 74; -- CPU is in debug mode when set
+  -- DIFT control --
+  constant ctrl_dift_alu_lsb_c  : natural := 76; -- DIFT ALU control input LSB
+  constant ctrl_dift_alu_msb_c  : natural := 77; -- DIFT ALU control input MSB
+  constant ctrl_dift_chk_0_c    : natural := 78; -- DIFT tag check control bit 0
+  constant ctrl_dift_chk_1_c    : natural := 79; -- DIFT tag check control bit 1
+  constant ctrl_dift_chk_2_c    : natural := 80; -- DIFT tag check control bit 2
+  constant ctrl_dift_chk_3_c    : natural := 81; -- DIFT tag check control bit 3
+  constant ctrl_bus_settag_c    : natural := 82; -- DIFT set tag memory control bit
   -- control bus size --
-  constant ctrl_width_c         : natural := 75; -- control bus size
+  constant ctrl_width_c         : natural := 83; -- control bus size
+
 
   -- Comparator Bus -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -439,6 +451,7 @@ package neorv32_package is
   constant funct3_sb_c     : std_ulogic_vector(2 downto 0) := "000"; -- store byte
   constant funct3_sh_c     : std_ulogic_vector(2 downto 0) := "001"; -- store half word
   constant funct3_sw_c     : std_ulogic_vector(2 downto 0) := "010"; -- store word
+  constant funct3_settag_c : std_ulogic_vector(2 downto 0) := "101"; -- set tag (DIFT only)
   -- alu --
   constant funct3_subadd_c : std_ulogic_vector(2 downto 0) := "000"; -- sub/add via funct7
   constant funct3_sll_c    : std_ulogic_vector(2 downto 0) := "001"; -- shift logical left
@@ -509,6 +522,38 @@ package neorv32_package is
   constant fp_single_neg_inf_c  : std_ulogic_vector(31 downto 0) := x"ff800000"; -- negative infinity
   constant fp_single_pos_zero_c : std_ulogic_vector(31 downto 0) := x"00000000"; -- positive zero
   constant fp_single_neg_zero_c : std_ulogic_vector(31 downto 0) := x"80000000"; -- negative zero
+
+  -- DIFT CSRs --
+  ------------------------------------------------------------------------------------------
+  -- tag propagation --
+  constant dift_prop_alu_lsb_c     : natural := 0;
+  constant dift_prop_alu_msb_c     : natural := 1;
+  constant dift_prop_branch_lsb_c  : natural := 2;
+  constant dift_prop_branch_msb_c  : natural := 3;
+  constant dift_prop_jump_lsb_c    : natural := 4;
+  constant dift_prop_jump_msb_c    : natural := 5;
+  constant dift_prop_comp_lsb_c    : natural := 6;
+  constant dift_prop_comp_msb_c    : natural := 7;
+  constant dift_prop_load_lsb_c    : natural := 8;
+  constant dift_prop_load_msb_c    : natural := 9;
+
+  -- tag check --
+  constant dift_chk_alu_0_c     : natural := 0;
+  constant dift_chk_alu_1_c     : natural := 1;
+  constant dift_chk_alu_2_c     : natural := 2;
+  constant dift_chk_branch_0_c  : natural := 3;
+  constant dift_chk_branch_1_c  : natural := 4;
+  constant dift_chk_branch_2_c  : natural := 5;
+  constant dift_chk_jump_0_c    : natural := 6;
+  constant dift_chk_jump_1_c    : natural := 7;
+  constant dift_chk_jump_2_c    : natural := 8;
+  constant dift_chk_comp_0_c    : natural := 9;
+  constant dift_chk_comp_1_c    : natural := 10;
+  constant dift_chk_comp_2_c    : natural := 11;
+  constant dift_chk_load_0_c    : natural := 12;
+  constant dift_chk_load_1_c    : natural := 13;
+  constant dift_chk_load_2_c    : natural := 14;
+  constant dift_chk_pc_c        : natural := 15;
 
   -- RISC-V CSR Addresses -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -649,6 +694,10 @@ package neorv32_package is
   constant csr_pmpaddr61_c      : std_ulogic_vector(11 downto 0) := x"3ed";
   constant csr_pmpaddr62_c      : std_ulogic_vector(11 downto 0) := x"3ee";
   constant csr_pmpaddr63_c      : std_ulogic_vector(11 downto 0) := x"3ef";
+  -- DIFT registers --
+  constant csr_class_dift_c     : std_ulogic_vector(10 downto 0) := x"70" & "000";
+  constant csr_dift_prop_c      : std_ulogic_vector(11 downto 0) := x"700";
+  constant csr_dift_chk_c       : std_ulogic_vector(11 downto 0) := x"701";
   -- debug mode registers --
   constant csr_class_debug_c    : std_ulogic_vector(09 downto 0) := x"7b" & "00"; -- debug registers
   constant csr_dcsr_c           : std_ulogic_vector(11 downto 0) := x"7b0";
@@ -911,7 +960,7 @@ package neorv32_package is
       PMP_NUM_REGIONS              : natural := 0;      -- number of regions (0..64)
       PMP_MIN_GRANULARITY          : natural := 64*1024; -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
       -- Hardware Performance Monitors (HPM) --
-      HPM_NUM_CNTS                 : natural := 0;      -- number of implemented HPM counters (0..29)
+      HPM_NUM_CNTS                 : natural := 4;      -- number of implemented HPM counters (0..29)
       HPM_CNT_WIDTH                : natural := 40;     -- total size of HPM counters (0..64)
       -- Internal Instruction memory (IMEM) --
       MEM_INT_IMEM_EN              : boolean := false;  -- implement processor-internal instruction memory
@@ -1021,7 +1070,7 @@ package neorv32_package is
       mtime_i        : in  std_ulogic_vector(63 downto 0) := (others => 'U'); -- current system time from ext. MTIME (if IO_MTIME_EN = false)
       mtime_o        : out std_ulogic_vector(63 downto 0); -- current system time from int. MTIME (if IO_MTIME_EN = true)
       -- External platform interrupts (available if XIRQ_NUM_CH > 0) --
-      xirq_i         : in  std_ulogic_vector(XIRQ_NUM_CH-1 downto 0) := (others => 'L'); -- IRQ channels
+      -- xirq_i         : in  std_ulogic_vector(XIRQ_NUM_CH-1 downto 0) := (others => 'L'); -- IRQ channels
       -- CPU Interrupts --
       nm_irq_i       : in  std_ulogic := 'L'; -- non-maskable interrupt
       mtime_irq_i    : in  std_ulogic := 'L'; -- machine timer interrupt, available if IO_MTIME_EN = false
@@ -1069,8 +1118,8 @@ package neorv32_package is
       sleep_o        : out std_ulogic; -- cpu is in sleep mode when set
       -- instruction bus interface --
       i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
+      i_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       i_bus_we_o     : out std_ulogic; -- write enable
       i_bus_re_o     : out std_ulogic; -- read enable
@@ -1081,8 +1130,8 @@ package neorv32_package is
       i_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
       -- data bus interface --
       d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
+      d_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       d_bus_we_o     : out std_ulogic; -- write enable
       d_bus_re_o     : out std_ulogic; -- read enable
@@ -1090,6 +1139,7 @@ package neorv32_package is
       d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
       d_bus_err_i    : in  std_ulogic; -- bus transfer error
       d_bus_fence_o  : out std_ulogic; -- executed FENCE operation
+      d_bus_settag_o : out std_ulogic; -- set tag control
       d_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
       -- system time input from MTIME --
       time_i         : in  std_ulogic_vector(63 downto 0); -- current system time
@@ -1150,11 +1200,13 @@ package neorv32_package is
       instr_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- instruction
       cmp_i         : in  std_ulogic_vector(1 downto 0); -- comparator status
       alu_add_i     : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU address result
+      alu_tag_i     : in  std_ulogic_vector(3 downto 0); -- ALU address tag 
       rs1_i         : in  std_ulogic_vector(data_width_c-1 downto 0); -- rf source 1
       -- data output --
       imm_o         : out std_ulogic_vector(data_width_c-1 downto 0); -- immediate
       fetch_pc_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- PC for instruction fetch
       curr_pc_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- current PC (corresponding to current instruction)
+      curr_pc_tag_o : out std_ulogic; -- PC tag
       csr_rdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
       -- FPU interface --
       fpu_flags_i   : in  std_ulogic_vector(04 downto 0); -- exception flags
@@ -1192,15 +1244,18 @@ package neorv32_package is
     );
     port (
       -- global control --
-      clk_i  : in  std_ulogic; -- global clock, rising edge
-      ctrl_i : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
+      clk_i     : in  std_ulogic; -- global clock, rising edge
+      ctrl_i    : in  std_ulogic_vector(ctrl_width_c-1 downto 0); -- main control bus
       -- data input --
-      mem_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- memory read data
-      alu_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
+      mem_i     : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
+      alu_i     : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
+      alu_tag_i : in  std_ulogic_vector(3 downto 0); -- ALU result DIFT tag
       -- data output --
-      rs1_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
-      rs2_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
-      cmp_o  : out std_ulogic_vector(1 downto 0) -- comparator status
+      rs1_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 1
+      rs2_o     : out std_ulogic_vector(data_width_c-1 downto 0); -- operand 2
+      rs1_t_o   : out std_ulogic_vector(3 downto 0); -- operand 1 tag bit
+      rs2_t_o   : out std_ulogic_vector(3 downto 0); -- operand 2 tag bit
+      cmp_o     : out std_ulogic_vector(1 downto 0) -- comparator status
     );
   end component;
 
@@ -1229,10 +1284,15 @@ package neorv32_package is
       imm_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- immediate
       csr_i       : in  std_ulogic_vector(data_width_c-1 downto 0); -- CSR read data
       cmp_i       : in  std_ulogic_vector(1 downto 0); -- comparator status
+      -- dift input --
+      rs1_tag_i   : in  std_ulogic_vector(3 downto 0); -- rf source 1 DIFT tag
+      rs2_tag_i   : in  std_ulogic_vector(3 downto 0); -- rf source 2 DIFT tag
       -- data output --
       res_o       : out std_ulogic_vector(data_width_c-1 downto 0); -- ALU result
       add_o       : out std_ulogic_vector(data_width_c-1 downto 0); -- address computation result
       fpu_flags_o : out std_ulogic_vector(4 downto 0); -- FPU exception flags
+      -- dift output --
+      tag_o       : out std_ulogic_vector(3 downto 0); -- DIFT tag result
       -- status --
       idone_o     : out std_ulogic -- iterative processing units done?
     );
@@ -1348,8 +1408,8 @@ package neorv32_package is
       be_instr_o     : out std_ulogic; -- bus error on instruction access
       -- cpu data access interface --
       addr_i         : in  std_ulogic_vector(data_width_c-1 downto 0); -- ALU result -> access address
-      wdata_i        : in  std_ulogic_vector(data_width_c-1 downto 0); -- write data
-      rdata_o        : out std_ulogic_vector(data_width_c-1 downto 0); -- read data
+      wdata_i        : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- write data
+      rdata_o        : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- read data
       mar_o          : out std_ulogic_vector(data_width_c-1 downto 0); -- current memory address register
       d_wait_o       : out std_ulogic; -- wait for access to complete
       --
@@ -1363,8 +1423,8 @@ package neorv32_package is
       pmp_ctrl_i     : in  pmp_ctrl_if_t; -- configs
       -- instruction bus --
       i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
+      i_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       i_bus_we_o     : out std_ulogic; -- write enable
       i_bus_re_o     : out std_ulogic; -- read enable
@@ -1374,15 +1434,16 @@ package neorv32_package is
       i_bus_fence_o  : out std_ulogic; -- fence operation
       -- data bus --
       d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
+      d_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
       d_bus_we_o     : out std_ulogic; -- write enable
       d_bus_re_o     : out std_ulogic; -- read enable
       d_bus_lock_o   : out std_ulogic; -- exclusive access request
       d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
       d_bus_err_i    : in  std_ulogic; -- bus transfer error
-      d_bus_fence_o  : out std_ulogic  -- fence operation
+      d_bus_fence_o  : out std_ulogic; -- fence operation
+      d_bus_settag_o : out std_ulogic
     );
   end component;
 
@@ -1459,18 +1520,19 @@ package neorv32_package is
       rstn_i          : in  std_ulogic; -- global reset, low-active, async
       -- controller interface a --
       ca_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      ca_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      ca_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      ca_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
+      ca_bus_wdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       ca_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
       ca_bus_we_i     : in  std_ulogic; -- write enable
       ca_bus_re_i     : in  std_ulogic; -- read enable
       ca_bus_lock_i   : in  std_ulogic; -- exclusive access request
       ca_bus_ack_o    : out std_ulogic; -- bus transfer acknowledge
       ca_bus_err_o    : out std_ulogic; -- bus transfer error
+      ca_bus_settag_i : in std_ulogic;  -- set tag control
       -- controller interface b --
       cb_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      cb_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      cb_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      cb_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
+      cb_bus_wdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       cb_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
       cb_bus_we_i     : in  std_ulogic; -- write enable
       cb_bus_re_i     : in  std_ulogic; -- read enable
@@ -1480,14 +1542,15 @@ package neorv32_package is
       -- peripheral bus --
       p_bus_src_o     : out std_ulogic; -- access source: 0 = A, 1 = B
       p_bus_addr_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-      p_bus_rdata_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-      p_bus_wdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      p_bus_rdata_i   : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
+      p_bus_wdata_o   : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
       p_bus_ben_o     : out std_ulogic_vector(03 downto 0); -- byte enable
       p_bus_we_o      : out std_ulogic; -- write enable
       p_bus_re_o      : out std_ulogic; -- read enable
       p_bus_lock_o    : out std_ulogic; -- exclusive access request
       p_bus_ack_i     : in  std_ulogic; -- bus transfer acknowledge
-      p_bus_err_i     : in  std_ulogic  -- bus transfer error
+      p_bus_err_i     : in  std_ulogic; -- bus transfer error
+      p_bus_settag_o  : out std_ulogic  -- set tag control
     );
   end component;
 
@@ -1517,8 +1580,8 @@ package neorv32_package is
       wren_i : in  std_ulogic; -- write enable
       ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
-      data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_i : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic -- transfer acknowledge
     );
   end component;
@@ -1531,14 +1594,15 @@ package neorv32_package is
       DMEM_SIZE : natural -- processor-internal instruction memory size in bytes
     );
     port (
-      clk_i  : in  std_ulogic; -- global clock line
-      rden_i : in  std_ulogic; -- read enable
-      wren_i : in  std_ulogic; -- write enable
-      ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
-      addr_i : in  std_ulogic_vector(31 downto 0); -- address
-      data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
-      ack_o  : out std_ulogic -- transfer acknowledge
+      clk_i    : in  std_ulogic; -- global clock line
+      rden_i   : in  std_ulogic; -- read enable
+      wren_i   : in  std_ulogic; -- write enable
+      settag_i : in  std_ulogic; -- set tag control
+      ben_i    : in  std_ulogic_vector(03 downto 0); -- byte write enable
+      addr_i   : in  std_ulogic_vector(31 downto 0); -- address
+      data_i   : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o   : out std_ulogic_vector(35 downto 0); -- data out
+      ack_o    : out std_ulogic -- transfer acknowledge
     );
   end component;
 
@@ -1552,7 +1616,7 @@ package neorv32_package is
       clk_i  : in  std_ulogic; -- global clock line
       rden_i : in  std_ulogic; -- read enable
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic -- transfer acknowledge
     );
   end component;
@@ -1566,8 +1630,8 @@ package neorv32_package is
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       rden_i : in  std_ulogic; -- read enable
       wren_i : in  std_ulogic; -- write enable
-      data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_i : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic; -- transfer acknowledge
       -- time output for CPU --
       time_o : out std_ulogic_vector(63 downto 0); -- current system time
@@ -1585,8 +1649,8 @@ package neorv32_package is
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       rden_i : in  std_ulogic; -- read enable
       wren_i : in  std_ulogic; -- write enable
-      data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_i : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic; -- transfer acknowledge
       -- parallel io --
       gpio_o : out std_ulogic_vector(63 downto 0);
@@ -1604,8 +1668,8 @@ package neorv32_package is
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1628,8 +1692,8 @@ package neorv32_package is
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1655,8 +1719,8 @@ package neorv32_package is
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1680,8 +1744,8 @@ package neorv32_package is
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1706,8 +1770,8 @@ package neorv32_package is
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1726,8 +1790,8 @@ package neorv32_package is
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       rden_i : in  std_ulogic; -- read enable
       wren_i : in  std_ulogic; -- write enable
-      data_i : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_i : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic  -- transfer acknowledge
     );
   end component;
@@ -1758,8 +1822,8 @@ package neorv32_package is
       rden_i    : in  std_ulogic; -- read enable
       wren_i    : in  std_ulogic; -- write enable
       ben_i     : in  std_ulogic_vector(03 downto 0); -- byte write enable
-      data_i    : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o    : out std_ulogic_vector(31 downto 0); -- data out
+      data_i    : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o    : out std_ulogic_vector(35 downto 0); -- data out
       lock_i    : in  std_ulogic; -- exclusive access request
       ack_o     : out std_ulogic; -- transfer acknowledge
       err_o     : out std_ulogic; -- transfer error
@@ -1794,8 +1858,8 @@ package neorv32_package is
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- word write enable
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1822,8 +1886,8 @@ package neorv32_package is
       addr_i      : in  std_ulogic_vector(31 downto 0); -- address
       rden_i      : in  std_ulogic; -- read enable
       wren_i      : in  std_ulogic; -- write enable
-      data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o      : out std_ulogic_vector(31 downto 0); -- data out
+      data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o      : out std_ulogic_vector(35 downto 0); -- data out
       ack_o       : out std_ulogic; -- transfer acknowledge
       -- clock generator --
       clkgen_en_o : out std_ulogic; -- enable clock generator
@@ -1850,8 +1914,8 @@ package neorv32_package is
       addr_i         : in  std_ulogic_vector(31 downto 0); -- address
       rden_i         : in  std_ulogic; -- read enable
       wren_i         : in  std_ulogic; -- write enable
-      data_i         : in  std_ulogic_vector(31 downto 0); -- data in
-      data_o         : out std_ulogic_vector(31 downto 0); -- data out
+      data_i         : in  std_ulogic_vector(35 downto 0); -- data in
+      data_o         : out std_ulogic_vector(35 downto 0); -- data out
       ack_o          : out std_ulogic; -- transfer acknowledge
       -- interrupt --
       irq_tx_o       : out std_ulogic; -- transmission done
@@ -1949,7 +2013,7 @@ package neorv32_package is
       clk_i  : in  std_ulogic; -- global clock line
       addr_i : in  std_ulogic_vector(31 downto 0); -- address
       rden_i : in  std_ulogic; -- read enable
-      data_o : out std_ulogic_vector(31 downto 0); -- data out
+      data_o : out std_ulogic_vector(35 downto 0); -- data out
       ack_o  : out std_ulogic  -- transfer acknowledge
     );
   end component;
@@ -2002,8 +2066,8 @@ package neorv32_package is
       cpu_addr_i       : in  std_ulogic_vector(31 downto 0); -- address
       cpu_rden_i       : in  std_ulogic; -- read enable
       cpu_wren_i       : in  std_ulogic; -- write enable
-      cpu_data_i       : in  std_ulogic_vector(31 downto 0); -- data in
-      cpu_data_o       : out std_ulogic_vector(31 downto 0); -- data out
+      cpu_data_i       : in  std_ulogic_vector(35 downto 0); -- data in
+      cpu_data_o       : out std_ulogic_vector(35 downto 0); -- data out
       cpu_ack_o        : out std_ulogic; -- transfer acknowledge
       -- CPU control --
       cpu_ndmrstn_o    : out std_ulogic; -- soc reset
@@ -2043,7 +2107,24 @@ package neorv32_package is
     );
   end component;
 
-end neorv32_package;
+  -- DIFT Components ---------------------------------------------------------------------------
+
+  component dift_tag_check
+    port (
+      -- globals --
+      clk_i         : in std_ulogic;
+      rstn_i        : in std_ulogic;
+      ctrl_i        : in std_ulogic_vector(ctrl_width_c-1 downto 0); -- cpu control bus
+      -- data input --
+      rs1_tag_i     : in std_ulogic_vector(3 downto 0); -- rf source 1 dift tag
+      rs2_tag_i     : in std_ulogic_vector(3 downto 0); -- rf source 2 dift tag
+      alu_tag_i     : in std_ulogic_vector(3 downto 0); -- alu result dift tag
+      pc_tag_i      : in std_ulogic;                    -- program counter dift tag
+      -- data output --
+     tag_except_o  : out std_ulogic -- exception signal
+   );
+  end component;
+end package neorv32_package;
 
 package body neorv32_package is
 

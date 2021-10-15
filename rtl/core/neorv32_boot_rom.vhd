@@ -48,7 +48,7 @@ entity neorv32_boot_rom is
     clk_i  : in  std_ulogic; -- global clock line
     rden_i : in  std_ulogic; -- read enable
     addr_i : in  std_ulogic_vector(31 downto 0); -- address
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
+    data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic -- transfer acknowledge
   );
 end neorv32_boot_rom;
@@ -66,7 +66,7 @@ architecture neorv32_boot_rom_rtl of neorv32_boot_rom is
   -- local signals --
   signal acc_en : std_ulogic;
   signal rden   : std_ulogic;
-  signal rdata  : std_ulogic_vector(31 downto 0);
+  signal rdata  : std_ulogic_vector(35 downto 0);
   signal addr   : std_ulogic_vector(boot_rom_size_index_c-1 downto 0);
 
   -- ROM - initialized with executable code --
@@ -93,7 +93,7 @@ begin
     if rising_edge(clk_i) then
       rden <= rden_i and acc_en;
       if (acc_en = '1') then -- reduce switching activity when not accessed
-        rdata <= mem_rom(to_integer(unsigned(addr)));
+        rdata <= "0000" & mem_rom(to_integer(unsigned(addr))); -- no DIFT tag
       end if;
     end if;
   end process mem_file_access;

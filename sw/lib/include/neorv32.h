@@ -190,6 +190,9 @@ enum NEORV32_CSR_enum {
   CSR_PMPADDR62      = 0x3ee, /**< 0x3ee - pmpaddr62 (r/w): Physical memory protection address register 62 */
   CSR_PMPADDR63      = 0x3ef, /**< 0x3ef - pmpaddr63 (r/w): Physical memory protection address register 63 */
 
+  CSR_DIFTPROP       = 0x700, /**< 0x700 - diftprop (r/w): Dynamic Information Flow Tracking tag propagation control register */
+  CSR_DIFTCHK        = 0x701, /**< 0x701 - diftchk  (r/w): Dynamic Information Flow Tracking tag check control register */
+
   CSR_MCYCLE         = 0xb00, /**< 0xb00 - mcycle   (r/w): Machine cycle counter low word */
   CSR_MINSTRET       = 0xb02, /**< 0xb02 - minstret (r/w): Machine instructions-retired counter low word */
 

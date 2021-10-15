@@ -32,6 +32,7 @@
 -- # The NEORV32 Processor - https://github.com/stnolting/neorv32              (c) Stephan Nolting #
 -- #################################################################################################
 
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -45,14 +46,15 @@ entity neorv32_dmem is
     DMEM_SIZE : natural -- processor-internal instruction memory size in bytes
   );
   port (
-    clk_i  : in  std_ulogic; -- global clock line
-    rden_i : in  std_ulogic; -- read enable
-    wren_i : in  std_ulogic; -- write enable
-    ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
-    addr_i : in  std_ulogic_vector(31 downto 0); -- address
-    data_i : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
-    ack_o  : out std_ulogic -- transfer acknowledge
+    clk_i       : in  std_ulogic; -- global clock line
+    rden_i      : in  std_ulogic; -- read enable
+    wren_i      : in  std_ulogic; -- write enable
+    settag_i    : in  std_ulogic; -- set tag control
+    ben_i       : in  std_ulogic_vector(03 downto 0); -- byte write enable
+    addr_i      : in  std_ulogic_vector(31 downto 0); -- address
+    data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+    data_o      : out std_ulogic_vector(35 downto 0); -- data out
+    ack_o       : out std_ulogic -- transfer acknowledge
   );
 end neorv32_dmem;
 
@@ -63,10 +65,12 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   constant lo_abb_c : natural := index_size_f(DMEM_SIZE); -- low address boundary bit
 
   -- local signals --
-  signal acc_en : std_ulogic;
-  signal rdata  : std_ulogic_vector(31 downto 0);
-  signal rden   : std_ulogic;
-  signal addr   : std_ulogic_vector(index_size_f(DMEM_SIZE/4)-1 downto 0);
+  signal acc_en     : std_ulogic;
+  signal rdata      : std_ulogic_vector(31 downto 0);
+  signal dift_rdata : std_ulogic_vector(03 downto 0);
+  signal dift_wdata : std_ulogic_vector(03 downto 0);
+  signal rden       : std_ulogic;
+  signal addr       : std_ulogic_vector(index_size_f(DMEM_SIZE/4)-1 downto 0);
 
   -- -------------------------------------------------------------------------------------------------------------- --
   -- The memory (RAM) is built from 4 individual byte-wide memories b0..b3, since some synthesis tools have         --
@@ -78,6 +82,9 @@ architecture neorv32_dmem_rtl of neorv32_dmem is
   signal mem_ram_b1 : mem8_t(0 to DMEM_SIZE/4-1);
   signal mem_ram_b2 : mem8_t(0 to DMEM_SIZE/4-1);
   signal mem_ram_b3 : mem8_t(0 to DMEM_SIZE/4-1);
+  
+  -- DIFT tag memory (4 tag bits per word) - initialized with zeroes --
+  signal mem_tag : mem4_t(0 to DMEM_SIZE/4-1) := (others => (others => '0'));
 
   -- read data --
   signal mem_ram_b0_rd, mem_ram_b1_rd, mem_ram_b2_rd, mem_ram_b3_rd : std_ulogic_vector(7 downto 0);
@@ -87,7 +94,7 @@ begin
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   assert false report "NEORV32 PROCESSOR CONFIG NOTE: Implementing processor-internal DMEM (RAM, " & natural'image(DMEM_SIZE) & " bytes)." severity note;
-
+  assert false report "NEORV32 PROCESSOR CONFIG NOTE: Implementing DIFT tags as processor-internal DMEM (RAM, " & natural'image(DMEM_SIZE/8) & " bytes)." severity note;
 
   -- Access Control -------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -97,12 +104,12 @@ begin
 
   -- Memory Access --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  mem_access: process(clk_i)
+  data_mem_access: process(clk_i)
   begin
     if rising_edge(clk_i) then
       -- this RAM style should not require "no_rw_check" attributes as the read-after-write behavior
       -- is intended to be defined implicitly via the if-WRITE-else-READ construct
-      if (acc_en = '1') then -- reduce switching activity when not accessed
+      if (acc_en = '1') and (settag_i = '0') then -- reduce switching activity when not accessed
         if (wren_i = '1') and (ben_i(0) = '1') then -- byte 0
           mem_ram_b0(to_integer(unsigned(addr))) <= data_i(07 downto 00);
         else
@@ -125,7 +132,24 @@ begin
         end if;
       end if;
     end if;
-  end process mem_access;
+  end process data_mem_access;
+
+  dift_wdata <= "1111" when (settag_i = '1') else data_i(35 downto 32); -- settag instruction
+
+  tag_mem_access: process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      -- this RAM style should not require "no_rw_check" attributes as the read-after-write behavior
+      -- is intended to be defined implicitly via the if-WRITE-else-READ construct
+      if (acc_en = '1') then -- reduce switching activity when not accessed
+        if (wren_i = '1') then
+          mem_tag(to_integer(unsigned(addr))) <= dift_wdata;
+        else
+          dift_rdata <= mem_tag(to_integer(unsigned(addr)));
+        end if;
+      end if;
+    end if;
+  end process tag_mem_access;
 
 
   -- Bus Feedback ---------------------------------------------------------------------------
@@ -142,7 +166,6 @@ begin
   rdata <= mem_ram_b3_rd & mem_ram_b2_rd & mem_ram_b1_rd & mem_ram_b0_rd;
 
   -- output gate --
-  data_o <= rdata when (rden = '1') else (others => '0');
-
+  data_o <= (dift_rdata & rdata) when (rden = '1') else (others => '0');
 
 end neorv32_dmem_rtl;

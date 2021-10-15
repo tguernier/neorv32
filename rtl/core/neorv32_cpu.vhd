@@ -94,8 +94,8 @@ entity neorv32_cpu is
     sleep_o        : out std_ulogic; -- cpu is in sleep mode when set
     -- instruction bus interface --
     i_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    i_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-    i_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    i_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
+    i_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     i_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     i_bus_we_o     : out std_ulogic; -- write enable
     i_bus_re_o     : out std_ulogic; -- read enable
@@ -106,8 +106,8 @@ entity neorv32_cpu is
     i_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
     -- data bus interface --
     d_bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    d_bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-    d_bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    d_bus_rdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0) := (others => '0'); -- bus read data
+    d_bus_wdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     d_bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
     d_bus_we_o     : out std_ulogic; -- write enable
     d_bus_re_o     : out std_ulogic; -- read enable
@@ -115,6 +115,7 @@ entity neorv32_cpu is
     d_bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
     d_bus_err_i    : in  std_ulogic; -- bus transfer error
     d_bus_fence_o  : out std_ulogic; -- executed FENCE operation
+    d_bus_settag_o : out std_ulogic; -- set tag operation
     d_bus_priv_o   : out std_ulogic_vector(1 downto 0); -- privilege level
     -- system time input from MTIME --
     time_i         : in  std_ulogic_vector(63 downto 0); -- current system time
@@ -141,7 +142,8 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal rs1, rs2   : std_ulogic_vector(data_width_c-1 downto 0); -- source registers
   signal alu_res    : std_ulogic_vector(data_width_c-1 downto 0); -- alu result
   signal alu_add    : std_ulogic_vector(data_width_c-1 downto 0); -- alu address result
-  signal mem_rdata  : std_ulogic_vector(data_width_c-1 downto 0); -- memory read data
+  signal tag_res    : std_ulogic_vector(3 downto 0);              -- DIFT alu result
+  signal mem_rdata  : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- memory read data
   signal alu_idone  : std_ulogic; -- iterative alu operation done
   signal bus_i_wait : std_ulogic; -- wait for current bus instruction fetch
   signal bus_d_wait : std_ulogic; -- wait for current bus data access
@@ -157,6 +159,14 @@ architecture neorv32_cpu_rtl of neorv32_cpu is
   signal fetch_pc   : std_ulogic_vector(data_width_c-1 downto 0); -- pc for instruction fetch
   signal curr_pc    : std_ulogic_vector(data_width_c-1 downto 0); -- current pc (for current executed instruction)
   signal fpu_flags  : std_ulogic_vector(4 downto 0); -- FPU exception flags
+  
+  -- dift signals
+  signal rs1_t      : std_ulogic_vector(3 downto 0); -- source register tag bits
+  signal rs2_t      : std_ulogic_vector(3 downto 0);
+  signal rs2_tagged : std_ulogic_vector(dift_bus_w_c-1 downto 0); -- rs2 (register output to bus) with tag
+  signal pc_tag     : std_ulogic;
+  signal tag_except : std_ulogic; -- DIFT tag exception (from tag check)
+  signal nm_irq     : std_ulogic; -- non-maskable interrupt
 
   -- pmp interface --
   signal pmp_addr : pmp_addr_if_t;
@@ -277,11 +287,13 @@ begin
     instr_i       => instr,       -- instruction
     cmp_i         => comparator,  -- comparator status
     alu_add_i     => alu_add,     -- ALU address result
+    alu_tag_i     => tag_res,     -- ALU tag result
     rs1_i         => rs1,         -- rf source 1
     -- data output --
     imm_o         => imm,         -- immediate
     fetch_pc_o    => fetch_pc,    -- PC for instruction fetch
     curr_pc_o     => curr_pc,     -- current PC (corresponding to current instruction)
+    curr_pc_tag_o => pc_tag,      -- current PC tag
     csr_rdata_o   => csr_rdata,   -- CSR read data
     -- FPU interface --
     fpu_flags_i   => fpu_flags,   -- exception flags
@@ -292,7 +304,7 @@ begin
     mext_irq_i    => mext_irq_i,  -- machine external interrupt
     mtime_irq_i   => mtime_irq_i, -- machine timer interrupt
     -- non-maskable interrupt --
-    nm_irq_i      => nm_irq_i,    -- nmi
+    nm_irq_i      => nm_irq,    -- nmi
     -- fast interrupts (custom) --
     firq_i        => firq_i,      -- fast interrupt trigger
     -- system time input from MTIME --
@@ -322,15 +334,18 @@ begin
   )
   port map (
     -- global control --
-    clk_i  => clk_i,              -- global clock, rising edge
-    ctrl_i => ctrl,               -- main control bus
+    clk_i     => clk_i,              -- global clock, rising edge
+    ctrl_i    => ctrl,               -- main control bus
     -- data input --
-    mem_i  => mem_rdata,          -- memory read data
-    alu_i  => alu_res,            -- ALU result
+    mem_i     => mem_rdata,          -- memory read data
+    alu_i     => alu_res,            -- ALU result
+    alu_tag_i => tag_res,            -- ALU result tag
     -- data output --
-    rs1_o  => rs1,                -- operand 1
-    rs2_o  => rs2,                -- operand 2
-    cmp_o  => comparator          -- comparator status
+    rs1_o     => rs1,                -- operand 1
+    rs2_o     => rs2,                -- operand 2
+    rs1_t_o   => rs1_t,              -- operand 1 tag bit
+    rs2_t_o   => rs2_t,              -- operand 2 tag bit
+    cmp_o     => comparator          -- comparator status
   );
 
 
@@ -359,13 +374,20 @@ begin
     imm_i       => imm,           -- immediate
     csr_i       => csr_rdata,     -- CSR read data
     cmp_i       => comparator,    -- comparator status
+    -- dift input --
+    rs1_tag_i   => rs1_t,         -- rf source 1 tag
+    rs2_tag_i   => rs2_t,         -- rf source 2 tag
     -- data output --
     res_o       => alu_res,       -- ALU result
     add_o       => alu_add,       -- address computation result
     fpu_flags_o => fpu_flags,     -- FPU exception flags
+    -- dift output --
+    tag_o       => tag_res,       -- DIFT tag ALU result
     -- status --
     idone_o     => alu_idone      -- iterative processing units done?
   );
+
+  rs2_tagged <= rs2_t & rs2; -- recombine register contents and tag
 
 
   -- Bus Interface Unit ---------------------------------------------------------------------
@@ -392,7 +414,7 @@ begin
     be_instr_o     => be_instr,       -- bus error on instruction access
     -- cpu data access interface --
     addr_i         => alu_add,        -- ALU.add result -> access address
-    wdata_i        => rs2,            -- write data
+    wdata_i        => rs2_tagged,     -- write data
     rdata_o        => mem_rdata,      -- read data
     mar_o          => mar,            -- current memory address register
     d_wait_o       => bus_d_wait,     -- wait for access to complete
@@ -426,8 +448,29 @@ begin
     d_bus_lock_o   => d_bus_lock_o,   -- exclusive access request
     d_bus_ack_i    => d_bus_ack_i,    -- bus transfer acknowledge
     d_bus_err_i    => d_bus_err_i,    -- bus transfer error
-    d_bus_fence_o  => d_bus_fence_o   -- fence operation
+    d_bus_fence_o  => d_bus_fence_o,  -- fence operation
+    d_bus_settag_o => d_bus_settag_o  -- set tag operation
   );
+   
+  -- DIFT tag check ----------------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  dift_tag_check_inst: dift_tag_check
+  port map (
+    -- global control --
+    clk_i         => clk_i,         -- global clock, rising edge
+    rstn_i        => rstn_i,        -- global reset, low-active, async
+    ctrl_i        => ctrl,          -- main control bus
+    -- data input --
+    rs1_tag_i     => rs1_t,         -- rf source 1 tag
+    rs2_tag_i     => rs2_t,         -- rf source 2 tag
+    alu_tag_i     => tag_res,       -- alu result tag
+    pc_tag_i      => pc_tag,        -- PC tag
+    -- data output
+    tag_except_o  => tag_except     -- DIFT tag exception
+  );
+
+  -- tag interrupt
+  nm_irq <= nm_irq_i or tag_except;
 
   -- current privilege level --
   i_bus_priv_o <= ctrl(ctrl_priv_lvl_msb_c downto ctrl_priv_lvl_lsb_c);

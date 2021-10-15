@@ -48,14 +48,14 @@ use std.textio.all;
 
 entity neorv32_tb_simple is
   generic (
-    CPU_EXTENSION_RISCV_A        : boolean := true;
-    CPU_EXTENSION_RISCV_C        : boolean := true;
+    CPU_EXTENSION_RISCV_A        : boolean := false;
+    CPU_EXTENSION_RISCV_C        : boolean := false;
     CPU_EXTENSION_RISCV_E        : boolean := false;
-    CPU_EXTENSION_RISCV_M        : boolean := true;
+    CPU_EXTENSION_RISCV_M        : boolean := false;
     CPU_EXTENSION_RISCV_U        : boolean := true;
-    CPU_EXTENSION_RISCV_Zbb      : boolean := true;
+    CPU_EXTENSION_RISCV_Zbb      : boolean := false;
     CPU_EXTENSION_RISCV_Zicsr    : boolean := true;
-    CPU_EXTENSION_RISCV_Zifencei : boolean := true;
+    CPU_EXTENSION_RISCV_Zifencei : boolean := false;
     EXT_IMEM_C                   : boolean := false;   -- false: use and boot from proc-internal IMEM, true: use and boot from external (initialized) simulated IMEM (ext. mem A)
     MEM_INT_IMEM_SIZE            : natural := 16*1024  -- size in bytes of processor-internal IMEM / external mem A
   );
@@ -173,7 +173,7 @@ begin
     HW_THREAD_ID                 => 0,             -- hardware thread id (hartid) (32-bit)
     INT_BOOTLOADER_EN            => false,         -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
     -- On-Chip Debugger (OCD) --
-    ON_CHIP_DEBUGGER_EN          => true,          -- implement on-chip debugger
+    ON_CHIP_DEBUGGER_EN          => false,          -- implement on-chip debugger
     -- RISC-V CPU Extensions --
     CPU_EXTENSION_RISCV_A        => CPU_EXTENSION_RISCV_A,  -- implement atomic extension?
     CPU_EXTENSION_RISCV_C        => CPU_EXTENSION_RISCV_C,  -- implement compressed extension?
@@ -181,7 +181,7 @@ begin
     CPU_EXTENSION_RISCV_M        => CPU_EXTENSION_RISCV_M,  -- implement muld/div extension?
     CPU_EXTENSION_RISCV_U        => CPU_EXTENSION_RISCV_U,  -- implement user mode extension?
     CPU_EXTENSION_RISCV_Zbb      => CPU_EXTENSION_RISCV_Zbb,-- implement basic bit-manipulation sub-extension?
-    CPU_EXTENSION_RISCV_Zfinx    => true,          -- implement 32-bit floating-point extension (using INT reg!)
+    CPU_EXTENSION_RISCV_Zfinx    => false,          -- implement 32-bit floating-point extension (using INT reg!)
     CPU_EXTENSION_RISCV_Zicsr    => CPU_EXTENSION_RISCV_Zicsr,     -- implement CSR system?
     CPU_EXTENSION_RISCV_Zifencei => CPU_EXTENSION_RISCV_Zifencei,  -- implement instruction stream sync.?
     CPU_EXTENSION_RISCV_Zmmul    => false,         -- implement multiply-only M sub-extension?
@@ -190,10 +190,10 @@ begin
     FAST_SHIFT_EN                => false,         -- use barrel shifter for shift operations
     CPU_CNT_WIDTH                => 64,            -- total width of CPU cycle and instret counters (0..64)
     -- Physical Memory Protection (PMP) --
-    PMP_NUM_REGIONS              => 5,             -- number of regions (0..64)
+    PMP_NUM_REGIONS              => 0,             -- number of regions (0..64)
     PMP_MIN_GRANULARITY          => 64*1024,       -- minimal region granularity in bytes, has to be a power of 2, min 8 bytes
     -- Hardware Performance Monitors (HPM) --
-    HPM_NUM_CNTS                 => 12,            -- number of implemented HPM counters (0..29)
+    HPM_NUM_CNTS                 => 4,            -- number of implemented HPM counters (0..29)
     HPM_CNT_WIDTH                => 40,            -- total size of HPM counters (0..64)
     -- Internal Instruction memory --
     MEM_INT_IMEM_EN              => int_imem_c ,   -- implement processor-internal instruction memory
@@ -202,37 +202,37 @@ begin
     MEM_INT_DMEM_EN              => int_dmem_c,    -- implement processor-internal data memory
     MEM_INT_DMEM_SIZE            => dmem_size_c,   -- size of processor-internal data memory in bytes
     -- Internal Cache memory --
-    ICACHE_EN                    => true,          -- implement instruction cache
+    ICACHE_EN                    => false,          -- implement instruction cache
     ICACHE_NUM_BLOCKS            => 8,             -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE            => 64,            -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY         => 2,             -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
-    MEM_EXT_EN                   => true,          -- implement external memory bus interface?
+    MEM_EXT_EN                   => false,          -- implement external memory bus interface?
     MEM_EXT_TIMEOUT              => 255,           -- cycles after a pending bus access auto-terminates (0 = disabled)
     -- Stream link interface --
-    SLINK_NUM_TX                 => 8,             -- number of TX links (0..8)
-    SLINK_NUM_RX                 => 8,             -- number of TX links (0..8)
+    SLINK_NUM_TX                 => 0,             -- number of TX links (0..8)
+    SLINK_NUM_RX                 => 0,             -- number of TX links (0..8)
     SLINK_TX_FIFO                => 4,             -- TX fifo depth, has to be a power of two
     SLINK_RX_FIFO                => 1,             -- RX fifo depth, has to be a power of two
     -- External Interrupts Controller (XIRQ) --
-    XIRQ_NUM_CH                  => 32,            -- number of external IRQ channels (0..32)
+    XIRQ_NUM_CH                  => 0,            -- number of external IRQ channels (0..32)
     XIRQ_TRIGGER_TYPE            => (others => '1'), -- trigger type: 0=level, 1=edge
     XIRQ_TRIGGER_POLARITY        => (others => '1'), -- trigger polarity: 0=low-level/falling-edge, 1=high-level/rising-edge
     -- Processor peripherals --
     IO_GPIO_EN                   => true,          -- implement general purpose input/output port unit (GPIO)?
     IO_MTIME_EN                  => true,          -- implement machine system timer (MTIME)?
     IO_UART0_EN                  => true,          -- implement primary universal asynchronous receiver/transmitter (UART0)?
-    IO_UART1_EN                  => true,          -- implement secondary universal asynchronous receiver/transmitter (UART1)?
-    IO_SPI_EN                    => true,          -- implement serial peripheral interface (SPI)?
-    IO_TWI_EN                    => true,          -- implement two-wire interface (TWI)?
-    IO_PWM_NUM_CH                => 30,            -- number of PWM channels to implement (0..60); 0 = disabled
+    IO_UART1_EN                  => false,          -- implement secondary universal asynchronous receiver/transmitter (UART1)?
+    IO_SPI_EN                    => false,          -- implement serial peripheral interface (SPI)?
+    IO_TWI_EN                    => false,          -- implement two-wire interface (TWI)?
+    IO_PWM_NUM_CH                => 0,            -- number of PWM channels to implement (0..60); 0 = disabled
     IO_WDT_EN                    => true,          -- implement watch dog timer (WDT)?
     IO_TRNG_EN                   => false,         -- trng cannot be simulated
-    IO_CFS_EN                    => true,          -- implement custom functions subsystem (CFS)?
+    IO_CFS_EN                    => false,          -- implement custom functions subsystem (CFS)?
     IO_CFS_CONFIG                => (others => '0'), -- custom CFS configuration generic
     IO_CFS_IN_SIZE               => 32,            -- size of CFS input conduit in bits
     IO_CFS_OUT_SIZE              => 32,            -- size of CFS output conduit in bits
-    IO_NEOLED_EN                 => true           -- implement NeoPixel-compatible smart LED interface (NEOLED)?
+    IO_NEOLED_EN                 => false           -- implement NeoPixel-compatible smart LED interface (NEOLED)?
   )
   port map (
     -- Global control --
@@ -299,7 +299,7 @@ begin
     mtime_i        => (others => '0'), -- current system time from ext. MTIME (if IO_MTIME_EN = false)
     mtime_o        => open,            -- current system time from int. MTIME (if IO_MTIME_EN = true)
     -- External platform interrupts (available if XIRQ_NUM_CH > 0) --
-    xirq_i         => gpio(31 downto 0), -- IRQ channels
+    -- xirq_i         => gpio(31 downto 0), -- IRQ channels
     -- CPU Interrupts --
     nm_irq_i       => nmi_ring,        -- non-maskable interrupt
     mtime_irq_i    => '0',             -- machine software interrupt, available if IO_MTIME_EN = false

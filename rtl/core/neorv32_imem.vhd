@@ -55,8 +55,8 @@ entity neorv32_imem is
     wren_i : in  std_ulogic; -- write enable
     ben_i  : in  std_ulogic_vector(03 downto 0); -- byte write enable
     addr_i : in  std_ulogic_vector(31 downto 0); -- address
-    data_i : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
+    data_i : in  std_ulogic_vector(35 downto 0); -- data in
+    data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic  -- transfer acknowledge
   );
 end neorv32_imem;
@@ -69,7 +69,7 @@ architecture neorv32_imem_rtl of neorv32_imem is
 
   -- local signals --
   signal acc_en : std_ulogic;
-  signal rdata  : std_ulogic_vector(31 downto 0);
+  signal rdata  : std_ulogic_vector(35 downto 0);
   signal rden   : std_ulogic;
   signal addr   : std_ulogic_vector(index_size_f(IMEM_SIZE/4)-1 downto 0);
 
@@ -133,7 +133,7 @@ begin
       end if;
     end process mem_access;
     -- read data --
-    rdata <= mem_rom_rd;
+    rdata <= "0000" & mem_rom_rd;
   end generate;
 
 
@@ -171,7 +171,7 @@ begin
       end if;
     end process mem_access;
     -- read data --
-    rdata <= mem_b3_rd & mem_b2_rd & mem_b1_rd & mem_b0_rd;
+    rdata <= "0000" & mem_b3_rd & mem_b2_rd & mem_b1_rd & mem_b0_rd; -- no DIFT tags
   end generate;
 
 

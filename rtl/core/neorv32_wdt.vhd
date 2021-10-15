@@ -55,8 +55,8 @@ entity neorv32_wdt is
     addr_i      : in  std_ulogic_vector(31 downto 0); -- address
     rden_i      : in  std_ulogic; -- read enable
     wren_i      : in  std_ulogic; -- write enable
-    data_i      : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o      : out std_ulogic_vector(31 downto 0); -- data out
+    data_i      : in  std_ulogic_vector(35 downto 0); -- data in
+    data_o      : out std_ulogic_vector(35 downto 0); -- data out
     ack_o       : out std_ulogic; -- transfer acknowledge
     -- clock generator --
     clkgen_en_o : out std_ulogic; -- enable clock generator

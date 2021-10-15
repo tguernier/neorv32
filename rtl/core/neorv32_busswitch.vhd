@@ -53,18 +53,19 @@ entity neorv32_busswitch is
     rstn_i          : in  std_ulogic; -- global reset, low-active, async
     -- controller interface a --
     ca_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    ca_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-    ca_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    ca_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data (for data)
+    ca_bus_wdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     ca_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
     ca_bus_we_i     : in  std_ulogic; -- write enable
     ca_bus_re_i     : in  std_ulogic; -- read enable
     ca_bus_lock_i   : in  std_ulogic; -- exclusive access request
     ca_bus_ack_o    : out std_ulogic; -- bus transfer acknowledge
     ca_bus_err_o    : out std_ulogic; -- bus transfer error
+    ca_bus_settag_i : in std_ulogic;  -- set tag control
     -- controller interface b --
     cb_bus_addr_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    cb_bus_rdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-    cb_bus_wdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    cb_bus_rdata_o  : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data (for instructions)
+    cb_bus_wdata_i  : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     cb_bus_ben_i    : in  std_ulogic_vector(03 downto 0); -- byte enable
     cb_bus_we_i     : in  std_ulogic; -- write enable
     cb_bus_re_i     : in  std_ulogic; -- read enable
@@ -74,14 +75,15 @@ entity neorv32_busswitch is
     -- peripheral bus --
     p_bus_src_o     : out std_ulogic; -- access source: 0 = A, 1 = B
     p_bus_addr_o    : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
-    p_bus_rdata_i   : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
-    p_bus_wdata_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+    p_bus_rdata_i   : in  std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus read data
+    p_bus_wdata_o   : out std_ulogic_vector(dift_bus_w_c-1 downto 0); -- bus write data
     p_bus_ben_o     : out std_ulogic_vector(03 downto 0); -- byte enable
     p_bus_we_o      : out std_ulogic; -- write enable
     p_bus_re_o      : out std_ulogic; -- read enable
     p_bus_lock_o    : out std_ulogic; -- exclusive access request
     p_bus_ack_i     : in  std_ulogic; -- bus transfer acknowledge
-    p_bus_err_i     : in  std_ulogic  -- bus transfer error
+    p_bus_err_i     : in  std_ulogic; -- bus transfer error
+    p_bus_settag_o  : out std_ulogic  -- set tag control
   );
 end neorv32_busswitch;
 
@@ -258,6 +260,7 @@ begin
   p_bus_we_o     <= (p_bus_we or arbiter.we_trig);
   p_bus_re_o     <= (p_bus_re or arbiter.re_trig);
   p_bus_lock_o   <= ca_bus_lock_i or cb_bus_lock_i;
+  p_bus_settag_o <= ca_bus_settag_i;
 
   ca_bus_rdata_o <= p_bus_rdata_i;
   cb_bus_rdata_o <= p_bus_rdata_i;

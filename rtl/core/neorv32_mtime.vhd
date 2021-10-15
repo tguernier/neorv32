@@ -49,8 +49,8 @@ entity neorv32_mtime is
     addr_i : in  std_ulogic_vector(31 downto 0); -- address
     rden_i : in  std_ulogic; -- read enable
     wren_i : in  std_ulogic; -- write enable
-    data_i : in  std_ulogic_vector(31 downto 0); -- data in
-    data_o : out std_ulogic_vector(31 downto 0); -- data out
+    data_i : in  std_ulogic_vector(35 downto 0); -- data in
+    data_o : out std_ulogic_vector(35 downto 0); -- data out
     ack_o  : out std_ulogic; -- transfer acknowledge
     -- time output for CPU --
     time_o : out std_ulogic_vector(63 downto 0); -- current system time
@@ -105,10 +105,10 @@ begin
       -- mtimecmp --
       if (wren = '1') then
         if (addr = mtime_cmp_lo_addr_c) then
-          mtimecmp_lo <= data_i;
+          mtimecmp_lo <= data_i(31 downto 0);
         end if;
         if (addr = mtime_cmp_hi_addr_c) then
-          mtimecmp_hi <= data_i;
+          mtimecmp_hi <= data_i(31 downto 0);
         end if;
       end if;
 
@@ -119,7 +119,7 @@ begin
 
       -- mtime low --
       if (mtime_lo_we = '1') then -- write access
-        mtime_lo <= data_i;
+        mtime_lo <= data_i(31 downto 0);
       else -- auto increment
         mtime_lo <= mtime_lo_nxt(31 downto 0);
       end if;
@@ -127,7 +127,7 @@ begin
 
       -- mtime high --
       if (mtime_hi_we = '1') then -- write access
-        mtime_hi <= data_i;
+        mtime_hi <= data_i(31 downto 0);
       else -- auto increment (if mtime.low overflows)
         mtime_hi <= std_ulogic_vector(unsigned(mtime_hi) + unsigned(mtime_lo_ovfl));
       end if;
@@ -148,13 +148,13 @@ begin
       if (rden_i = '1') and (acc_en = '1') then
         case addr is
           when mtime_time_lo_addr_c => -- mtime LOW
-            data_o <= mtime_lo;
+            data_o <= "0000" & mtime_lo;
           when mtime_time_hi_addr_c => -- mtime HIGH
-            data_o <= mtime_hi;
+            data_o <= "0000" & mtime_hi;
           when mtime_cmp_lo_addr_c => -- mtimecmp LOW
-            data_o <= mtimecmp_lo;
+            data_o <= "0000" & mtimecmp_lo;
           when others => -- mtime_cmp_hi_addr_c -- mtimecmp HIGH
-            data_o <= mtimecmp_hi;
+            data_o <= "0000" & mtimecmp_hi;
         end case;
       end if;
     end if;
