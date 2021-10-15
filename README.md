@@ -1,9 +1,9 @@
 This is a project to add Dynamic Information Flow Tracking (DIFT) capabilities to the neorv32 RISC-V processor, done as an undergraduate Part 4 project for the University of Auckland.
 
 Guide to Branches:
-* master: Upstream master branch
-* de1-soc: Exemplar setup of the unmodified processor for the Terasic DE1-SoC board, modified from the neorv32_ProcessorTop_Test.vhd template. This implements the base ISA and the Zicsr and U extensions.
-* dift-develop: development branch for project
+* master: Master branch, with completed DIFT processor prototype
+* de1-soc-v1.6.0: Exemplar setup of the unmodified processor v.1.6.0 for the Terasic DE1-SoC board, modified from the neorv32_ProcessorTop_Test.vhd template. This implements the base ISA and the Zicsr and U extensions. This is the version of the processor used for comparisons with the DIFT processor
+* dift-develop: development branch for DIFT processor
 
 # Original Readme
 [![GitHub Pages](https://img.shields.io/website.svg?label=stnolting.github.io%2Fneorv32&longCache=true&style=flat-square&url=http%3A%2F%2Fstnolting.github.io%2Fneorv32%2Findex.html&logo=GitHub)](https://stnolting.github.io/neorv32)
